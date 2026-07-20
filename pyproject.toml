@@ -50,6 +50,7 @@ dev = [
     "myst_parser",
     "mypy",
     "prek",
+    "ipython",
 ]
 docs = [
     "sphinx",
@@ -110,6 +111,7 @@ ignore = [
     "D104", # Missing public package docstring
     "D105", # Missing docstring in magic method
     "D107", # Missing docstring in `__init__`
+    "COM812", # Missing trailing comma
 ]
 pydocstyle.convention = "numpy"
 

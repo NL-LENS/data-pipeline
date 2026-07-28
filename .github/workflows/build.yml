@@ -19,11 +19,12 @@ jobs:
         os: ['ubuntu-latest', 'macos-latest', 'windows-latest']
         python-version: ['3.12', '3.13']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'
       - name: Python info
         shell: bash -e {0}
         run: |
@@ -39,15 +40,16 @@ jobs:
         run: python -m build
   lint:
     name: Linting build
-    runs-on: ubuntu-latest
+    runs-on: 'ubuntu-latest'
     strategy:
       fail-fast: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: 3.12
+          cache: 'pip'
       - name: Python info
         shell: bash -e {0}
         run: |
@@ -65,15 +67,17 @@ jobs:
     name: Check types with mypy
     runs-on: 'ubuntu-latest'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          cache: 'pip'
+          python-version: '3.12'
+          extras: 'dev'
       - name: Clean up space
         run: |
           sudo rm -rf "/opt/ghc" || true
           sudo rm -rf "/usr/share/dotnet" || true
           sudo rm -rf "/usr/local/lib/android" || true
           sudo rm -rf "/usr/local/share/boost" || true
-      - uses: ./.github/actions/setup-python-cached
-        with:
-          python-version: '3.12'
       - name: Run mypy on package
         run: mypy src/

@@ -70,21 +70,10 @@ Changelog = "https://github.com/NL-LENS/data_pipeline/CHANGELOG.md"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-
 [tool.coverage.run]
 branch = true
 source = ["src/data_pipeline"]
 command_line = "-m pytest"
-
-[tool.tox]
-legacy_tox_ini = """
-[tox]
-envlist = py312
-skip_missing_interpreters = true
-[testenv]
-commands = pytest
-extras = dev
-"""
 
 [tool.ruff]
 line-length = 120

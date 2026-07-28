@@ -89,6 +89,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 select = ["ALL"]
 ignore = [
     "ANN204", # Missing return type annotation for special (dunder) method
+    "CPY",    # Missing copyright notice at top of file (project uses a LICENSE.md)
     "FBT",    # Using boolean function arguments
     "TD",     # TODOs
     "FIX001", # Resolve FIXMEs

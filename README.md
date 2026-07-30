@@ -1,17 +1,32 @@
-# data-pipeline
-Code for processing data
+# Data build system for life event registry data
+
+This is a tool to manage the data pipeline for life event registry data.
+
+Rough steps:
+1. Collect metadata about raw file from data provider
+2. Read raw data and save as parquet
+3. Minimally process raw data to a silver layer in event format
 
 ## Setup
 
 ```bash
 uv sync
+
 source .venv/bin/activate
 pytest
 ```
 
 ## Development
 
-Running CI locally with `act`
+```bash
+uv sync --extra dev
+
+source .venv/bin/activate
+pytest
+```
+
+
+#### Running CI locally with `act`
 
 Assuming `act` is available and on the PATH:
 

@@ -76,7 +76,7 @@ class TestCollectFileInfo:
         Creates root directory with subdirectories and files with and
         without read permissions.
         """
-        root_dir = tmp_path_factory.getbasetemp()
+        root_dir = tmp_path_factory.mktemp(Path(__file__).stem)
 
         for path in self.path_list:
             filepath, file = (root_dir / path).parent, path.name

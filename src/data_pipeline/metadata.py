@@ -105,7 +105,7 @@ def collect_file_info(root_dir: Path | str, exclude_dir: list | None = None) -> 
 
         for file in files:
             full_path = root / file
-            file_stats = full_path.stat()
+            last_modified, file_size_bytes = get_file_stats(full_path)
 
             record = FileMeta(
                 source_filename=Path(file),
@@ -113,8 +113,8 @@ def collect_file_info(root_dir: Path | str, exclude_dir: list | None = None) -> 
                 ref_period=extract_ref_period(file),
                 version=extract_version(file),
                 read_access=check_read_access(full_path),
-                last_modified=datetime.fromtimestamp(file_stats.st_mtime, tz=UTC),
-                file_size_bytes=file_stats.st_size,
+                last_modified=last_modified,
+                file_size_bytes=file_size_bytes,
             )
             data.append(record)
 
@@ -128,6 +128,19 @@ def check_read_access(filepath: Path) -> bool:
             return True
     except PermissionError:
         return False
+
+
+def get_file_stats(filepath: Path) -> tuple[datetime, int]:
+    """File statistics from stat().
+
+    Returns
+    -------
+    tuple: First entry is last modification time, second entry is file size.
+    """
+    file_stats = filepath.stat()
+    last_modified = datetime.fromtimestamp(file_stats.st_mtime, tz=UTC)
+    file_size_bytes = file_stats.st_size
+    return (last_modified, file_size_bytes)
 
 
 def create_manifest(file_metadata: Sequence[FileMeta], db_file: Path | str) -> None:

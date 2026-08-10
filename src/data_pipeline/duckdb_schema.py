@@ -293,7 +293,7 @@ class DuckDBTable:
         -------
         A dictionary of column names and type-casted column values.
         Specifically for Union types declared in the record's field types,
-        non-NULL values arecast to the first matching Python type.
+        non-NULL values are cast to the first matching Python type.
         """
         with duckdb.connect(self.db_file, read_only=True) as con:
             con.sql("SET TIMEZONE='UTC'")
@@ -305,28 +305,22 @@ class DuckDBTable:
             raise RuntimeError(msg)
 
         result = {}
-        for column, value in zip(column_types.keys(), data, strict=True):
-            # TODO: use case here
-            if isinstance(value, column_types[column]):
-                result[column] = value
-                continue
-
-            if value is None:
-                result[column] = value
-                continue
-            # TODO: not sure how this behaves when >1 non-None types are given
-            if isinstance(column_types[column], types.UnionType):
-                castable_types = filterfalse(lambda x: x is types.NoneType, get_args(column_types[column]))
-                try:
-                    casted_value = next(castable_types)(value)
-                except StopIteration as e:
-                    msg = f"Value {value} in column {column} cannot be casted to any Python types."
-                    raise RuntimeError(msg) from e
-
-                result[column] = casted_value
-                continue
-
-            result[column] = column_types[column](value)
+        for (column, type_), value in zip(column_types.items(), data, strict=True):
+            match (value, type_):
+                case (None, _):  # case: value is None
+                    result[column] = value
+                case (_, types.UnionType()):  # case: type_ is types.UnionType
+                    castable_types = filterfalse(lambda x: x is types.NoneType, get_args(column_types[column]))
+                    try:
+                        casted_value = next(castable_types)(value)
+                    except StopIteration as e:
+                        msg = f"Value {value} in column {column} cannot be casted to any Python types."
+                        raise RuntimeError(msg) from e
+                    result[column] = casted_value
+                case (v, t) if isinstance(v, t):  # case: value is of type type_,
+                    result[column] = v
+                case (v, t):  # always true; bind value and type to v, t to re-use in expression
+                    result[column] = t(v)
 
         return result
 

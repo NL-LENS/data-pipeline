@@ -1,4 +1,5 @@
 import re
+from collections.abc import Iterable
 from itertools import filterfalse
 
 _VALID_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -8,6 +9,19 @@ def query_params(data: list | tuple) -> str:
     """Create SQL query parameters for inserting `data`."""
     n_columns = len(data)
     return ",".join(["?"] * n_columns)
+    # TODO: rename to reflect insertion
+
+
+def where_query_params(column_names: Iterable[str]) -> str:
+    """Parameterize SQL string for WHERE query."""
+    where = [f"{col} = ?" for col in column_names]
+    return " AND ".join(where)
+
+
+def set_statement(column_names: Iterable[str]) -> str:
+    """CREATE parameterized SET statement for an UPDATE query."""
+    set_stmt = [f"{col} = ?" for col in column_names]
+    return f"SET {', '.join(set_stmt)}"
 
 
 def quote_identifier(name: str) -> str:

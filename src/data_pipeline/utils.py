@@ -5,11 +5,10 @@ from itertools import filterfalse
 _VALID_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def query_params(data: list | tuple) -> str:
+def make_insert_params(data: list | tuple) -> str:
     """Create SQL query parameters for inserting `data`."""
     n_columns = len(data)
     return ",".join(["?"] * n_columns)
-    # TODO: rename to reflect insertion
 
 
 def where_query_params(column_names: Iterable[str]) -> str:

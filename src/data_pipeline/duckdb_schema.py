@@ -304,7 +304,7 @@ class DuckDBTable:
             msg = "No records in database for this primary key."
             raise RuntimeError(msg)
 
-        result = {}
+        result: dict[str, Any] = {}
         for (column, type_), value in zip(column_types.items(), data, strict=True):
             match (value, type_):
                 case (None, _):  # case: value is None

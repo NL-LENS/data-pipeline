@@ -7,13 +7,13 @@ Assumptions
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from dataclasses import field
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
-import duckdb
-from data_pipeline.duckdb_schema import DuckDBSchema
+from data_pipeline.duckdb_schema import DuckDBRecord
+from data_pipeline.duckdb_schema import DuckDBTable
 from data_pipeline.utils import filter_list
-from data_pipeline.utils import query_params
 
 RAW_DATA_FILE_TYPES = [".dta", ".sav", ".sas7bdat"]
 
@@ -60,19 +60,21 @@ def extract_version(x: str) -> int | None:
 
 
 @dataclass
-class FileMeta(DuckDBSchema):
+class FileMeta(DuckDBRecord):
     """Container for file metadata."""
 
-    source_path: Path
-    source_filename: Path
+    source_path: Path = field(metadata={"primary_key": True})
+    source_filename: Path = field(metadata={"primary_key": True})
     read_access: bool
     last_modified: datetime
     file_size_bytes: int
     ref_period: datetime | None
     version: int | None
     bronze_path: Path | None = None
-    schema_hash: str | None = None
+    schema_hash: int | None = None
     ingested_at: datetime | None = None
+
+    # TODO: add docstring describing the schema??
 
 
 def collect_file_info(root_dir: Path | str, exclude_dir: list | None = None) -> Sequence[FileMeta]:
@@ -140,9 +142,6 @@ def create_manifest(file_metadata: Sequence[FileMeta], db_file: Path | str) -> N
     if len(file_metadata) == 0:
         return
 
-    file_metadata[0].create_table("source_manifest", db_file)
-
-    with duckdb.connect(db_file) as con:
-        values_to_insert = [meta.as_dict().values() for meta in file_metadata]
-        insert_params = query_params(list(values_to_insert[0]))
-        con.executemany(f"INSERT INTO source_manifest VALUES ({insert_params})", values_to_insert)  # noqa: S608
+    table = DuckDBTable("source_manifest", db_file)
+    table.create_from_record(file_metadata[0])
+    table.insert_many(file_metadata)

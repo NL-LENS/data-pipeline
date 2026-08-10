@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from dataclasses import field
 from dataclasses import fields
 from datetime import UTC
 from datetime import datetime
@@ -7,62 +8,106 @@ import duckdb
 import pytest
 from data_pipeline.duckdb_schema import DuckDBBigInt
 from data_pipeline.duckdb_schema import DuckDBDouble
-from data_pipeline.duckdb_schema import DuckDBSchema
+from data_pipeline.duckdb_schema import DuckDBRecord
+from data_pipeline.duckdb_schema import DuckDBTable
+
+# TODO: use smart strategy for table of test cases
+# do not insert all the time
+# TODO: test with multiple primary keys?
 
 
 @dataclass
-class SchemaForTesting(DuckDBSchema):
-    """Schema for testing."""
+class RecordForTesting(DuckDBRecord):
+    """Record for testing."""
 
-    path_name: Path
+    path_name: Path = field(metadata={"primary_key": True})
     ref_period: datetime
     int_column: int | None = None
 
 
 @pytest.fixture
-def schema_instance() -> SchemaForTesting:
+def record() -> RecordForTesting:
     """Fixture for schema object."""
     time_now = datetime.now(UTC)
-    return SchemaForTesting(Path("/some/path"), time_now, 3)
+    return RecordForTesting(Path("/some/path"), time_now, 3)
 
 
-class TestDuckDBSchema:
+@pytest.fixture
+def db_table(tmp_path: Path) -> DuckDBTable:
+    """Sample table instance."""
+    db_file = tmp_path / "test.db"
+    return DuckDBTable(table_name="test_table", db_file=db_file)
+
+
+class TestDuckDBRecord:
     """Test DuckDBSchema."""
 
-    def test_init(self, schema_instance: SchemaForTesting) -> None:
+    def test_init(self, record: RecordForTesting) -> None:
         """Test initialization."""
-        assert hasattr(schema_instance, "field_to_type_map"), "does not have field_to_type_map attr."
-        expected_keys = [f.name for f in fields(schema_instance)]
-        assert set(expected_keys) == set(schema_instance.field_to_type_map), "field_to_type_map has wrong keys."
+        assert hasattr(record, "field_to_type_map"), "does not have field_to_type_map attr."
+        expected_keys = [f.name for f in fields(record)]
+        assert set(expected_keys) == set(record.field_to_type_map), "field_to_type_map has wrong keys."
 
-    def test_as_dict(self, schema_instance: SchemaForTesting) -> None:
+    def test_as_dict(self, record: RecordForTesting) -> None:
         """Test as_dict method."""
-        instance_dict = schema_instance.as_dict()
-        expected_keys = [f.name for f in fields(schema_instance)]
+        instance_dict = record.as_dict()
+        expected_keys = [f.name for f in fields(record)]
         assert set(expected_keys) == set(instance_dict.keys())
         assert instance_dict["path_name"] == str(Path("/some/path"))  # Windows
 
-    def test_build_ddl(self, schema_instance: SchemaForTesting) -> None:
+    # TODO: add test that mapping is in correct order, or rather that
+    # the mapping's order match the order in as_dict
+
+    def test_invalid_schema(self) -> None:
+        """Test invalid schema raises error."""
+
+        @dataclass
+        class InvalidRecord(DuckDBRecord):
+            none_column: None = None
+
+        with pytest.raises(TypeError, match="for field none_column"):
+            _ = InvalidRecord(None)
+
+    # TODO: test with other records, such as big int etc
+    def test_from_table(self, db_table: DuckDBTable, record: RecordForTesting) -> None:
+        """Test from_table."""
+        db_table.create(record.field_to_type_map, record.primary_keys())
+        db_table.insert(record)
+
+        new_instance = RecordForTesting.from_table(lookup={"path_name": Path("/some/path")}, table=db_table)
+        # NOTE: the types of the key values are not validated here.
+        assert record == new_instance, "Incorrectly constructing record from table."
+
+    def test_from_table_invalid_keys_raises(self, db_table: DuckDBTable) -> None:
+        """Test that error is raised."""
+        wrong_keys = {"int_column": 5}
+        with pytest.raises(RuntimeError):
+            RecordForTesting.from_table(wrong_keys, db_table)
+
+
+class TestDuckDBTable:
+    """Test DuckDBTable."""
+
+    def test_build_ddl(self, db_table: DuckDBTable, record: RecordForTesting) -> None:
         """Test build_ddl."""
-        ddl = schema_instance.build_ddl("test_table")
+        ddl = db_table.build_ddl(record.field_to_type_map, record.primary_keys())
         expected_ddl = (
             """CREATE TABLE IF NOT EXISTS "test_table" """
-            """("path_name" VARCHAR, "ref_period" TIMESTAMPTZ, "int_column" INTEGER)"""
+            """("path_name" VARCHAR, "ref_period" TIMESTAMPTZ, "int_column" INTEGER, """
+            """PRIMARY KEY ("path_name"))"""
         )
         assert ddl == expected_ddl, "Incorrect ddl created."
 
-    def test_create_table(self, schema_instance: SchemaForTesting, tmp_path: Path) -> None:
+    def test_create(self, db_table: DuckDBTable, record: RecordForTesting) -> None:
         """Test table creation."""
-        db_file = tmp_path / "test.db"
-        schema_instance.create_table("test_table", db_file)
-        # add test that table 'test' exists in table schema
+        db_table.create(record.field_to_type_map, record.primary_keys())
+        # TODO: add test that table 'test' exists in table schema
 
-    def test_write_to_db(self, schema_instance: SchemaForTesting, tmp_path: Path) -> None:
+    def test_insert(self, record: RecordForTesting, db_table: DuckDBTable) -> None:
         """Test writing to database."""
-        db_file = tmp_path / "test.db"
-        schema_instance.create_table("test_table", db_file)
-        schema_instance.write_to_db("test_table", db_file)
-        with duckdb.connect(db_file) as con:
+        db_table.create_from_record(record)
+        db_table.insert(record)
+        with duckdb.connect(db_table.db_file) as con:
             con.sql("SET TIMEZONE='UTC'")  # Need UTC-awareness per connection
             # Work-around: querying TZ-aware columns with con.execute().fetch*
             # fails b/c of a missing (and outdated) runtime dep.
@@ -82,49 +127,70 @@ class TestDuckDBSchema:
 
         assert len(non_time_data) == 1, "Incorrect number of rows"
 
-        expected_non_time_data = {
-            field_: value for field_, value in schema_instance.as_dict().items() if field_ != "ref_period"
-        }
+        expected_non_time_data = {field_: value for field_, value in record.as_dict().items() if field_ != "ref_period"}
 
         assert non_time_data[0] == tuple(expected_non_time_data.values()), (
             "Round-trip py-DuckDB-py fails for non-time data."
         )
 
         expected_time_data = (
-            schema_instance.ref_period.year,
-            schema_instance.ref_period.month,
-            schema_instance.ref_period.day,
-            schema_instance.ref_period.hour,
-            schema_instance.ref_period.minute,
+            record.ref_period.year,
+            record.ref_period.month,
+            record.ref_period.day,
+            record.ref_period.hour,
+            record.ref_period.minute,
         )
         assert time_data[0] == expected_time_data, "Round-trip py-DuckDB-py fails for time data"
 
-    def test_invalid_schema(self) -> None:
-        """Test invalid schema raises error."""
+    def test_read(self, record: RecordForTesting, db_table: DuckDBTable) -> None:
+        """Test reading a single record from the table."""
+        # TODO: expand to more types, also >1 optional non-null?
+        db_table.create_from_record(record)
+        db_table.insert(record)
 
-        @dataclass
-        class InvalidSchema(DuckDBSchema):
-            none_column: None = None
+        key_dict = {"path_name": str(record.path_name)}
+        data = db_table.read(key_dict, column_types=record.py_types())
 
-        with pytest.raises(TypeError, match="for field none_column"):
-            _ = InvalidSchema(None)
+        for field_ in fields(record):
+            assert getattr(record, field_.name) == data[field_.name], "Round-trip fails for field {field_}"
 
-    def test_64bit_numeric(self, tmp_path: Path) -> None:
+    # TODO: test for missing table??
+    def test_read_missing_raises(self, db_table: DuckDBTable, record: RecordForTesting) -> None:
+        """Test that reading record from table that is missing raises error."""
+        db_table.create_from_record(record)
+        db_table.insert(record)
+
+        key_dict = {"path_name": "/wrong/path"}
+        with pytest.raises(RuntimeError):
+            _ = db_table.read(key_dict, column_types=RecordForTesting.py_types())
+
+    def test_64bit_numeric(self, db_table: DuckDBTable) -> None:
         """Test for 64bit numeric data types in DuckDB."""
 
         @dataclass
-        class BigSchema(DuckDBSchema):
+        class BigRecord(DuckDBRecord):
             """Schema for testing."""
 
             int_column: DuckDBBigInt
             double_column: DuckDBDouble
 
-        instance = BigSchema(int_column=DuckDBBigInt(3), double_column=DuckDBDouble(10.3))
-        db_file = tmp_path / "test.db"
-        table_name = "test_table"
-        instance.create_table(table_name, db_file)
-        instance.write_to_db(table_name, db_file)
-        with duckdb.connect(db_file) as con:
+        record = BigRecord(int_column=DuckDBBigInt(3), double_column=DuckDBDouble(10.3))
+        db_table.create_from_record(record)
+        db_table.insert(record)
+        with duckdb.connect(db_table.db_file) as con:
             data = con.sql("SELECT * FROM test_table").fetchall()[0]
 
-        assert data == tuple(instance.as_dict().values()), "Round-trip fails for 64bit precision types."
+        assert data == tuple(record.as_dict().values()), "Round-trip fails for 64bit precision types."
+
+    def test_update(self, db_table: DuckDBTable, record: RecordForTesting) -> None:
+        """Test update."""
+        db_table.create_from_record(record)
+        db_table.insert(record)
+
+        record.int_column = 100
+        record.ref_period = datetime.now(UTC)
+
+        db_table.update(record)
+
+        new_record = RecordForTesting.from_table(lookup=record.key_attributes, table=db_table)
+        assert new_record == record, "Updating record fails."

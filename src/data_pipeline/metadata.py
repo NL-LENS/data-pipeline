@@ -74,7 +74,38 @@ class FileMeta(DuckDBRecord):
     schema_hash: int | None = None
     ingested_at: datetime | None = None
 
-    # TODO: add docstring describing the schema??
+    """Define the schema for file metadata records.
+
+    Arguments
+    ---------
+    source_path:
+        full path to the location of the file.
+    source_filename:
+        file name, including suffix.
+    read_access:
+        Indicates whether the file is read-accessible.
+    last_modified:
+        Date and time of last modification, in UTC format.
+    file_size_bytes:
+        Size of the file.
+    ref_period:
+        If available, the date and time of the reference period. See :func:`~extract_ref_period`.
+    version
+        If available, the integer version number. See :func:`~extract_version`.
+    bronze_path:
+        If ingested, the path to the bronze parquet file.
+    schema_hash:
+        If ingested, the integer hash of the pyreadstat schema.
+    ingested_at:
+        If ingested, the date and time of ingestion.
+
+    Example
+    -------
+    File on path `'G:/INPATAB/INPA2017V3.sav'` has
+        - primary key on ('G:/INPATAB/', 'INPA2017V3.sav')
+        - ref_period = datetime(2017, 1, 1)
+        - version = 3
+    """
 
 
 def collect_file_info(root_dir: Path | str, exclude_dir: list | None = None) -> Sequence[FileMeta]:

@@ -13,7 +13,7 @@ from typing import NewType
 from typing import Self
 from typing import get_args
 import duckdb
-from data_pipeline.utils import query_params
+from data_pipeline.utils import make_insert_params
 from data_pipeline.utils import quote_identifier
 from data_pipeline.utils import set_statement
 from data_pipeline.utils import where_query_params
@@ -265,7 +265,7 @@ class DuckDBTable:
         with duckdb.connect(self.db_file) as con:
             con.sql("SET TIMEZONE='UTC'")
             data_to_insert = record.as_dict()
-            insert_params = query_params(list(data_to_insert.values()))
+            insert_params = make_insert_params(list(data_to_insert.values()))
             sql = f"INSERT INTO {quote_identifier(self.table_name)} VALUES ({insert_params})"  # noqa: S608
             con.execute(sql, data_to_insert.values())
 
@@ -273,7 +273,7 @@ class DuckDBTable:
         """Insert many records to the table."""
         with duckdb.connect(self.db_file) as con:
             values_to_insert = [r.as_dict().values() for r in records]
-            insert_params = query_params(list(values_to_insert[0]))
+            insert_params = make_insert_params(list(values_to_insert[0]))
             con.executemany(
                 f"INSERT INTO {quote_identifier(self.table_name)} VALUES ({insert_params})",  # noqa: S608
                 values_to_insert,

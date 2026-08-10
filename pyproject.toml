@@ -27,6 +27,7 @@ dependencies = [
    "pyreadstat",
    "numpy",
    "pyarrow",
+   "pytz",
 ]
 description = "Medallion architecture for CBS life event data"
 keywords = ["registry-data","etl"]

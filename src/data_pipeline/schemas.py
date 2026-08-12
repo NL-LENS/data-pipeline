@@ -17,6 +17,13 @@ class SourceManifest(DuckDBTable):
 
 
 @dataclass
+class SavMetaTable(DuckDBTable):
+    """Table for the .sav table metadata."""
+
+    table_name = "sav_meta"
+
+
+@dataclass
 class FileMetaRecord(DuckDBRecord):
     """Container for file metadata."""
 
@@ -64,3 +71,15 @@ class FileMetaRecord(DuckDBRecord):
         - ref_period = datetime(2017, 1, 1)
         - version = 3
     """
+
+
+@dataclass
+class SavMetaRecord(DuckDBRecord):
+    """Container for metadata of `.sav` files."""
+
+    source_path: Path = field(metadata={"foreign_key": {"table": "source_manifest", "column": "source_path"}})
+    source_filename: Path = field(metadata={"foreign_key": {"table": "source_manifest", "column": "source_filename"}})
+    variable: str
+    readstat_type: str
+    description: str | None
+    value_labels: dict | None = None  # TODO: may consider alternative to dict/json at some point

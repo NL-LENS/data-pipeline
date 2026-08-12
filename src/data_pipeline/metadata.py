@@ -6,13 +6,11 @@ Assumptions
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
-from dataclasses import field
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
-from data_pipeline.duckdb_schema import DuckDBRecord
-from data_pipeline.duckdb_schema import DuckDBTable
+from data_pipeline.schemas import FileMetaRecord
+from data_pipeline.schemas import SourceManifest
 from data_pipeline.utils import filter_list
 
 RAW_DATA_FILE_TYPES = [".dta", ".sav", ".sas7bdat"]
@@ -59,56 +57,7 @@ def extract_version(x: str) -> int | None:
     return int(match.group(1))
 
 
-@dataclass
-class FileMeta(DuckDBRecord):
-    """Container for file metadata."""
-
-    source_path: Path = field(metadata={"primary_key": True})
-    source_filename: Path = field(metadata={"primary_key": True})
-    read_access: bool
-    last_modified: datetime
-    file_size_bytes: int
-    ref_period: datetime | None
-    version: int | None
-    bronze_path: Path | None = None
-    schema_hash: int | None = None
-    ingested_at: datetime | None = None
-
-    """Define the schema for file metadata records.
-
-    Arguments
-    ---------
-    source_path:
-        full path to the location of the file.
-    source_filename:
-        file name, including suffix.
-    read_access:
-        Indicates whether the file is read-accessible.
-    last_modified:
-        Date and time of last modification, in UTC format.
-    file_size_bytes:
-        Size of the file.
-    ref_period:
-        If available, the date and time of the reference period. See :func:`~extract_ref_period`.
-    version
-        If available, the integer version number. See :func:`~extract_version`.
-    bronze_path:
-        If ingested, the path to the bronze parquet file.
-    schema_hash:
-        If ingested, the integer hash of the pyreadstat schema.
-    ingested_at:
-        If ingested, the date and time of ingestion.
-
-    Example
-    -------
-    File on path `'G:/INPATAB/INPA2017V3.sav'` has
-        - primary key on ('G:/INPATAB/', 'INPA2017V3.sav')
-        - ref_period = datetime(2017, 1, 1)
-        - version = 3
-    """
-
-
-def collect_file_info(root_dir: Path | str, exclude_dir: list | None = None) -> Sequence[FileMeta]:
+def collect_file_info(root_dir: Path | str, exclude_dir: list | None = None) -> Sequence[FileMetaRecord]:
     """Collect info on files in a root directory.
 
     Arguments
@@ -119,7 +68,7 @@ def collect_file_info(root_dir: Path | str, exclude_dir: list | None = None) -> 
 
     Returns
     -------
-    A list of records, where each record is a FileMeta container
+    A list of records, where each record is a FileMetaRecord container
     of metadata.
 
     Notes
@@ -127,7 +76,7 @@ def collect_file_info(root_dir: Path | str, exclude_dir: list | None = None) -> 
     This assumes the account running this function represents the users accessing
     the data later on.
     """
-    data: list[FileMeta] = []
+    data: list[FileMetaRecord] = []
     for root, dirs, files in Path(root_dir).walk():
         if exclude_dir is not None:
             dirs[:] = filter_list(dirs, exclude_dir)
@@ -138,7 +87,7 @@ def collect_file_info(root_dir: Path | str, exclude_dir: list | None = None) -> 
             full_path = root / file
             last_modified, file_size_bytes = get_file_stats(full_path)
 
-            record = FileMeta(
+            record = FileMetaRecord(
                 source_filename=Path(file),
                 source_path=root,
                 ref_period=extract_ref_period(file),
@@ -174,7 +123,7 @@ def get_file_stats(filepath: Path) -> tuple[datetime, int]:
     return (last_modified, file_size_bytes)
 
 
-def create_manifest(file_metadata: Sequence[FileMeta], db_file: Path | str) -> None:
+def create_manifest(file_metadata: Sequence[FileMetaRecord], db_file: Path | str) -> None:
     """Initialize 'manifest', a table with metadata about the source files.
 
     Arguments
@@ -186,6 +135,6 @@ def create_manifest(file_metadata: Sequence[FileMeta], db_file: Path | str) -> N
     if len(file_metadata) == 0:
         return
 
-    table = DuckDBTable("source_manifest", db_file)
+    table = SourceManifest(db_file)
     table.create_from_record(file_metadata[0])
     table.insert_many(file_metadata)

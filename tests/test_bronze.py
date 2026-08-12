@@ -1,3 +1,4 @@
+import typing
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +10,7 @@ import pyreadstat
 import pytest
 from polars.testing import assert_frame_equal
 from data_pipeline.bronze import ingest_source
+from data_pipeline.bronze import read_table_meta_to_db
 from data_pipeline.bronze import stream_to_bronze
 from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SourceManifest
@@ -38,13 +40,25 @@ class TestBronze:
     missing_file: Path = Path("missing_file.sav")
     file_out: str = "file_out.parquet"
     size_file_in: int = 5
+    sav_column_labels: typing.ClassVar[dict[str, str]] = {
+        "person_id": "Person identifier",
+        "date": "Reference date of the event",
+        "wage": "Hourly wage",
+        "sector": "Economic sector",
+        "null_col": "Column added later to the schema.",
+    }
 
     @pytest.fixture
     def db_file(self, tmp_path: Path) -> Path:
         """File for metadata database."""
         return tmp_path / "metadata.db"
 
-    @pytest.fixture(autouse=True)
+    @pytest.fixture
+    def sav_file(self, tmp_path: Path) -> Path:
+        """Path to sav file."""
+        return tmp_path / self.file_in
+
+    @pytest.fixture
     def metadata_db(self, db_file: Path, tmp_path: Path):
         """Set up database with file data."""
         file_record1 = FileMetaRecord(
@@ -82,8 +96,8 @@ class TestBronze:
         return dates + time_deltas
 
     @pytest.fixture
-    def sav_test_data(self, tmp_path: Path) -> tuple[pl.DataFrame, Path]:
-        """Dataframe and corresponding sav file.
+    def sav_test_data(self, sav_file: Path) -> pl.DataFrame:
+        """Create .sav and return corresponding dataframe.
 
         The dataframe has column types that are reverse-engineered from SPOLIS and INPATAB examples.
 
@@ -95,7 +109,6 @@ class TestBronze:
         For numeric values, a value label can also indicate a missing value, but they
         are stored as-is in the .sav file.
         """
-        file_path = tmp_path / self.file_in
         # TODO: try with other numeric types? float32, int32, in64?
 
         data_dict = {
@@ -113,20 +126,13 @@ class TestBronze:
         # Check in CBS and update test as necessary
         # According to events_bottom_up, we need to deal with string, float64 and 32, int 8 to 32
         # but probably should be int 16 to 64?
-        column_labels = {
-            "person_id": "Person identifier",
-            "date": "Reference date of the event",
-            "wage": "Hourly wage",
-            "sector": "Economic sector",
-            "null_col": "Column added later to the schema.",
-        }
         variable_value_labels = {
             "sector": {"1": "sector a", "2": "sector b", "3": "sector c", "99": "missing"},
             "wage": {9999999999: "missing", 9999999998: "also missing"},
         }
         user_missing_ranges = {
-            "wage": [{"lo": 100, "hi": 110}],  # 110 is included upper bound
             "sector": [{"hi": "98", "lo": "98"}],
+            "wage": [{"lo": 100, "hi": 110}],  # 110 is included upper bound
         }
 
         possible_missing_values = {
@@ -142,8 +148,8 @@ class TestBronze:
         data = pl.DataFrame(data_dict)
         pyreadstat.write_sav(
             data,
-            str(file_path),
-            column_labels=column_labels,
+            str(sav_file),
+            column_labels=self.sav_column_labels,
             variable_value_labels=variable_value_labels,
             missing_ranges=user_missing_ranges,
         )
@@ -153,20 +159,19 @@ class TestBronze:
         # and meta.user_missing is an empty dictionary.
         # We add this example here for completeness, but the assumed workflow
         # is to read with user_missing = False and ignore `meta.missing_ranges`
-        data = data.with_columns(
+        return data.with_columns(
             pl.when(pl.col("sector") == "y").then(None).otherwise(pl.col("sector")).alias("sector"),
             pl.when(pl.col("wage").is_in(np.arange(100, 111))).then(None).otherwise(pl.col("wage")).alias("wage"),
         )
 
-        return data, file_path
-
     def test_stream_to_bronze(
         self,
         sav_test_data: tuple[pl.DataFrame, Path],
+        sav_file: Path,
         tmp_path: Path,
     ) -> None:
         """Test stream_to_bronze function."""
-        expected_data, sav_file = sav_test_data
+        expected_data = sav_test_data
 
         # The null_col is completely missing in the underlying .sav file, and
         # read as pl.Null column
@@ -183,14 +188,20 @@ class TestBronze:
             "Original data is not equal the processed data.",
         )
 
-    @pytest.mark.xfail
-    def test_read_table_meta_to_db(self, db_file: Path) -> None:
-        """Test read_table_meta_to_db."""
-        source_manifest = SourceManifest(db_file=db_file)
-        with duckdb.connect(source_manifest.db_file) as con:
-            con.sql("SELECT * from information_schema.columns WHERE table_name = 'sav_meta'")
-        pytest.fail("Not implemented.")
+    @pytest.mark.usefixtures("metadata_db")
+    @pytest.mark.usefixtures("sav_test_data")
+    def test_read_table_meta_to_db(self, sav_file: Path, db_file: Path) -> None:
+        """Minimal test that .sav file metadata are correctly written to the database."""
+        read_table_meta_to_db(db_file, source_path=sav_file.parent, source_filename=sav_file.name)
 
+        with duckdb.connect(db_file) as con:
+            data = con.sql("SELECT variable, description from sav_meta").fetchall()
+
+        assert len(data) == len(self.sav_column_labels), "Incorrect number of variables recorded."
+        expected_data = list(self.sav_column_labels.items())
+        assert data == expected_data, "Variable name and description incorrectly recorded."
+
+    @pytest.mark.usefixtures("metadata_db")
     @pytest.mark.usefixtures("sav_test_data")
     @mock.patch("data_pipeline.bronze.stream_to_bronze")
     @mock.patch("data_pipeline.bronze.read_table_meta_to_db")
@@ -212,13 +223,3 @@ class TestBronze:
 
         mock_stream_to_bronze.assert_called_once()
         mock_read_table_meta_to_db.assert_called_once()
-
-
-# Tasks
-# minimize memory
-# contain types
-# extract all schema metadata
-# retain table stats in downstream parquet
-# extract table summary stats only from the written parquet
-# also try stata?
-#

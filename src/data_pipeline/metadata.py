@@ -4,6 +4,7 @@ Assumptions
 - All raw data are in one root directory.
 """
 
+import logging
 import re
 from collections.abc import Sequence
 from datetime import UTC
@@ -138,3 +139,11 @@ def create_manifest(file_metadata: Sequence[FileMetaRecord], db_file: Path | str
     table = SourceManifest(db_file)
     table.create_from_record(file_metadata[0])
     table.insert_many(file_metadata)
+
+
+def run_init(root_dir: Path, db_file: Path) -> None:
+    """Parse file metadata and create database file."""
+    logger = logging.getLogger(__name__)
+    file_metadata = collect_file_info(root_dir)
+    create_manifest(file_metadata, db_file)
+    logger.info("Created %s with file metadata from %s", str(root_dir), str(db_file))

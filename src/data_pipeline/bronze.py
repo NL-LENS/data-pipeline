@@ -25,7 +25,7 @@ def read_sav_meta(file: Path | str) -> pyreadstat.metadata_container:
     return meta
 
 
-def parse_sav_meta(source_path: Path, source_filename: Path) -> Sequence[SavMetaRecord]:
+def parse_sav_meta(source_path: Path, source_filename: Path | str) -> Sequence[SavMetaRecord]:
     """Extract table metadata from a sav file.
 
     Arguments
@@ -98,7 +98,7 @@ def stream_to_bronze(
             offset += chunk_size
 
 
-def read_table_meta_to_db(db_file: Path | str, source_path: Path, source_filename: Path) -> None:
+def read_table_meta_to_db(db_file: Path | str, source_path: Path, source_filename: Path | str) -> None:
     """Parse table metadata and write to database."""
     sav_metadata = parse_sav_meta(source_path, source_filename)
 
@@ -120,9 +120,9 @@ def ingest_source(db_file: Path | str, source_path: Path, source_filename: Path,
     db_file:
         Path to the database with metadata.
     source_path:
-        Absolute root directory.
+        Path to the folder of `source_filename`.
     source_filename:
-        The path to the .sav file to read, relative to source_path.
+        Name of the .sav file to read.
     dest_file:
         The full path to the .parquet file to write.
 

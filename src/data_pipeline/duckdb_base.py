@@ -13,6 +13,8 @@ from typing import NewType
 from typing import Self
 from typing import get_args
 import duckdb
+from data_pipeline.utils import is_optional
+from data_pipeline.utils import is_union
 from data_pipeline.utils import make_insert_params
 from data_pipeline.utils import quote_identifier
 from data_pipeline.utils import set_statement
@@ -21,6 +23,48 @@ from data_pipeline.utils import where_query_params
 DuckDBBigInt = NewType("DuckDBBigInt", int)
 DuckDBDouble = NewType("DuckDBDouble", float)
 # UBIGINT, UINTEGER omitted: unclear if necessary
+
+
+@dataclass
+class ForeignKey:
+    """Container for foreign keys.
+
+    Arguments
+    ---------
+    table:
+        The reference table to which the foreign key refer to.
+    self_cols:
+        The column names in the table that reference the foreign key. The
+        order of the columns matters.
+    ref_cols:
+        The column names in the reference table. The order of the columns
+        matters.
+    """
+
+    table: str | None
+    self_cols: tuple[str, ...]
+    ref_cols: tuple[str, ...]
+
+    def build_fk_ddl(self) -> str:
+        """Build DDL for FOREIGN KEY part."""
+        if self.table is None:
+            return ""
+
+        self_tuple = f"({', '.join(self.self_cols)})"
+        ref_tuple = f"({', '.join(self.ref_cols)})"
+        return f"FOREIGN KEY {self_tuple} REFERENCES {self.table}{ref_tuple}"
+
+    @classmethod
+    def from_dict(cls, fk_dict: dict[str, dict[str, str]]) -> Self:
+        """Create an instance from a dictionary."""
+        tables = [col_key_dict["table"] for col_key_dict in fk_dict.values()]
+        if len(set(tables)) > 1:
+            msg = "Need single reference table"
+            raise RuntimeError(msg)
+
+        ref_cols = [col_key_dict["column"] for col_key_dict in fk_dict.values()]
+
+        return cls(table=tables[0], self_cols=tuple(fk_dict.keys()), ref_cols=tuple(ref_cols))
 
 
 def sql_dict_factory(data: Iterable[tuple[str, Any]]) -> dict[str, Any]:
@@ -51,18 +95,40 @@ class DuckDBRecord:
     Defines a schema of columns and types, and maps from Python's type
     system to DuckDB's, using https://duckdb.org/docs/lts/clients/python/conversion.
 
-    Serves as single source of truth for declaring table schemas, and exploits
-    Python's typing system to keep code and schema mutually consistent.
+    Serves as single source of truth for declaring record fields, which correspond
+    to DuckDB columns. The conversion exploits Python's typing system to keep
+    code and schema mutually consistent. Optional columns are supported, but
+    it is strongly advised to only use UnionTypes composed of `NoneType` and
+    one other type:
+    DuckDB columns can only ever be of one type, so while the class supports
+    declaring multiple types that are not NoneType, this is not intended usage
+    and may lead to bugs.
 
     For ease of use, objects of type pathlib.Path are kept as such
     in Python, but written to DuckDB as strings, using a custom
     conversion function.
+
+    Primary and foreign keys can be specified with the fields' metadata, and
+    are passed to the respective table. Composite keys are supported.
+    - To set a field as primary key, use `metadata={"primary_key": True}`.
+    - To set a field as referring a foreign key, use
+    `metadata={"foreign_key": {"table": "table_name_ref_table", "column": "column_name"}}`.
+    - The order of the fields matters for composite keys: for setting a key
+    on columns (a, b), the field a should be define before the field b.
+
+    Invalid keys (such as that a foreign key requires a primary key in the reference table)
+    are only caught at runtime by DuckDB and raise errors.
 
     Notes
     -----
     - Numeric Python types are by default converted to 32-bit DuckDB types. For
     using 64-bit precision, declare `DuckDBBigInt` and `DuckDBDouble` in the schema.
     - The class currently cannot deal with special DuckDB data types (LIST, STRUCT, JSON).
+
+    References
+    ----------
+    - https://duckdb.org/docs/lts/sql/statements/create_table
+    - https://duckdb.org/docs/current/sql/constraints
     """
 
     # MappingProxyType provides a read-only interface to the
@@ -84,6 +150,7 @@ class DuckDBRecord:
         }
     )
     DICT_KEY_FOR_PK: ClassVar[str] = "primary_key"
+    DICT_KEY_FOR_FK: ClassVar[str] = "foreign_key"
 
     def __post_init__(self) -> None:
         mapping = self._map_non_union_types() | self._map_union_types()
@@ -99,7 +166,7 @@ class DuckDBRecord:
         DuckDB type.
         """
         mapping = {}
-        fields_ = [f for f in fields(self) if not isinstance(f.type, types.UnionType)]
+        fields_ = [f for f in fields(self) if not is_union(f.type) and not is_optional(f.type)]
         for field_ in fields_:
             py_type = field_.type
 
@@ -121,7 +188,7 @@ class DuckDBRecord:
         DuckDB type.
         """
         mapping = {}
-        fields_ = [f for f in fields(self) if isinstance(f.type, types.UnionType)]
+        fields_ = [f for f in fields(self) if is_union(f.type) or is_optional(f.type)]
         for field_ in fields_:
             py_type = field_.type
             type_args = get_args(py_type)
@@ -159,19 +226,31 @@ class DuckDBRecord:
         return {field_.name: getattr(field_, "type") for field_ in fields(cls)}  # noqa: B009 - getattr makes mypy happy
 
     @classmethod
-    def primary_keys(cls) -> list[str]:
+    def primary_key(cls) -> list[str]:
         """Return the field names that are defined as primary keys."""
         return [f.name for f in fields(cls) if f.metadata.get(cls.DICT_KEY_FOR_PK)]
+
+    @classmethod
+    def foreign_key(cls) -> ForeignKey | None:
+        """Return the field names that are defined as foreign keys."""
+        foreign_key_dict = {
+            f.name: f.metadata.get(cls.DICT_KEY_FOR_FK, "")
+            for f in fields(cls)
+            if f.metadata.get(cls.DICT_KEY_FOR_FK, "")
+        }
+        if len(foreign_key_dict) == 0:
+            return None
+        return ForeignKey.from_dict(foreign_key_dict)
 
     @property
     def key_attributes(self) -> dict[str, Any]:
         """Return dictionary of key-value pairs for the primary keys."""
-        return {name: value for name, value in self.as_dict().items() if name in self.primary_keys()}
+        return {name: value for name, value in self.as_dict().items() if name in self.primary_key()}
 
     @property
     def non_key_attributes(self) -> dict[str, Any]:
         """Return dictionary of key-value pairs for the fields that are not primary keys."""
-        return {name: value for name, value in self.as_dict().items() if name not in self.primary_keys()}
+        return {name: value for name, value in self.as_dict().items() if name not in self.primary_key()}
 
     @classmethod
     def from_table(cls, lookup: dict[str, Any], table: "DuckDBTable") -> Self:
@@ -190,9 +269,9 @@ class DuckDBRecord:
         Values are converted to duckdb-compatible types according
         to `sql_dict_factory`.
         """
-        required_keys = cls.primary_keys()
+        required_keys = cls.primary_key()
         if set(required_keys) != set(lookup.keys()):
-            msg = f"The record has keys {cls.primary_keys()} but {lookup.keys()} where declared."
+            msg = f"The record has keys {cls.primary_key()} but {lookup.keys()} where declared."
             raise RuntimeError(msg)
 
         lookup_cast = sql_dict_factory(lookup.items())
@@ -205,40 +284,68 @@ class DuckDBRecord:
 class DuckDBTable:
     """Table for duckdb."""
 
-    table_name: str
     db_file: Path | str = ""
+    table_name: ClassVar[str]
 
-    def build_ddl(self, column_definition: dict[str, str], primary_keys: list[str]) -> str:
+    def build_ddl(
+        self,
+        column_definition: dict[str, str],
+        primary_key: list[str] | None = None,
+        foreign_key: ForeignKey | None = None,
+    ) -> str:
         """Generate data definition language for this schema.
 
         Arguments
         ---------
         column_definition:
             dictionary of colum names and DuckDB column types.
-        primary_keys:
+        primary_key:
             list of column names defining the (composite) primary key of the column.
+            If `None` (default), no primary key is used.
+        foreign_key:
+            An instance of ForeignKey, or None.
+            If `None` (default), no foreign key is used.
+
+        Notes
+        -----
+        For compatibility with the foreign_key and primary_key method on
+        DuckDBRecords, the arguments also accept empty list/dicts, which
+        are treated in the same way as `None`.
         """
         column_declaration = [
-            f"{quote_identifier(col_name)} {col_type}" for col_name, col_type in column_definition.items()
+            f"""{quote_identifier(col_name)} {col_type}""" for col_name, col_type in column_definition.items()
         ]
         column_declaration_str = ", ".join(column_declaration)
-        if len(primary_keys) == 0:
+        if primary_key is None or len(primary_key) == 0:
             schema = column_declaration_str
         else:
-            primary_keys = [quote_identifier(key) for key in primary_keys]
-            schema = column_declaration_str + f", PRIMARY KEY ({', '.join(primary_keys)})"
+            primary_key = [quote_identifier(key) for key in primary_key]
+            schema = column_declaration_str + f", PRIMARY KEY ({', '.join(primary_key)})"
+
+        if foreign_key:
+            fk_ddl = foreign_key.build_fk_ddl()
+            schema = f"{schema}, {fk_ddl}"
+
         return f"CREATE TABLE IF NOT EXISTS {quote_identifier(self.table_name)} ({schema})"
 
-    def create(self, column_definition: dict[str, str], primary_keys: list[str]) -> None:
+    def create(
+        self,
+        column_definition: dict[str, str],
+        primary_key: list[str] | None = None,
+        foreign_key: ForeignKey | None = None,
+    ) -> None:
         """Create table with the schema.
 
         Arguments
         ---------
         column_definition:
             dictionary of column names and DuckDB data types.
-        primary_keys:
-            list of primary key columns. To create a table without primary keys,
-            this should be a list of length 0.
+        primary_key:
+            list of primary key columns.
+            If `None` (default), no primary key is created.
+        foreign_key:
+            An instance of ForeignKey, or None.
+            If `None` (the default), no foreign key is created.
 
         Note
         ----
@@ -248,7 +355,7 @@ class DuckDBTable:
         in the table takes precedence.
         """
         with duckdb.connect(self.db_file) as con:
-            sql = self.build_ddl(column_definition, primary_keys)
+            sql = self.build_ddl(column_definition, primary_key, foreign_key)
             con.execute(sql)
 
     def create_from_record(self, record: DuckDBRecord) -> None:
@@ -257,8 +364,9 @@ class DuckDBTable:
         Convenience wrapper around `create_table`.
         """
         column_definition = record.field_to_type_map
-        primary_keys = record.primary_keys()
-        self.create(column_definition, primary_keys)
+        primary_key = record.primary_key()
+        foreign_key = record.foreign_key()
+        self.create(column_definition, primary_key, foreign_key)
 
     def insert(self, record: DuckDBRecord) -> None:
         """Insert single record to the table."""
@@ -308,6 +416,10 @@ class DuckDBTable:
         for (column, type_), value in zip(column_types.items(), data, strict=True):
             match (value, type_):
                 case (None, _):  # case: value is None
+                    result[column] = value
+                case _ if isinstance(
+                    value, datetime
+                ):  # when datetime is read from table but declared type can be datetime | None
                     result[column] = value
                 case (_, types.UnionType()):  # case: type_ is types.UnionType
                     castable_types = filterfalse(lambda x: x is types.NoneType, get_args(column_types[column]))

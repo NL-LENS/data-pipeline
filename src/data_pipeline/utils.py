@@ -1,6 +1,10 @@
 import re
 from collections.abc import Iterable
 from itertools import filterfalse
+from types import UnionType
+from typing import Union
+from typing import get_args
+from typing import get_origin
 
 _VALID_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -54,3 +58,14 @@ def filter_list(list_in: list, drop_patterns: list) -> list:
     The modified list.
     """
     return list(filterfalse(lambda x: any(y in x for y in drop_patterns), list_in))
+
+
+def is_optional(field: type | str) -> bool:
+    """Check if a type is optional."""
+    # https://stackoverflow.com/questions/56832881/check-if-a-field-is-typing-optional
+    return is_union(field) and type(None) in get_args(field)
+
+
+def is_union(field: type | str) -> bool:
+    """Check if a type is a UnionType."""
+    return get_origin(field) is UnionType or get_origin(field) is Union

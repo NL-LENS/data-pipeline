@@ -7,12 +7,12 @@ from typing import ClassVar
 import duckdb
 import pytest
 from data_pipeline.metadata import RAW_DATA_FILE_TYPES
-from data_pipeline.metadata import FileMeta
 from data_pipeline.metadata import collect_file_info
 from data_pipeline.metadata import create_manifest
 from data_pipeline.metadata import extract_ref_period
 from data_pipeline.metadata import extract_version
 from data_pipeline.metadata import filter_list
+from data_pipeline.schemas import FileMetaRecord
 
 
 @pytest.fixture
@@ -25,9 +25,9 @@ def db_file(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def file_metadata() -> Sequence[FileMeta]:
+def file_metadata() -> Sequence[FileMetaRecord]:
     """Sample file metadata for writing to db."""
-    record0 = FileMeta(
+    record0 = FileMetaRecord(
         source_path=Path("data0/"),
         source_filename=Path("file0.dta"),
         read_access=False,
@@ -36,7 +36,7 @@ def file_metadata() -> Sequence[FileMeta]:
         ref_period=datetime(2012, 1, 1, tzinfo=UTC),
         version=2,
     )
-    record1 = FileMeta(
+    record1 = FileMetaRecord(
         source_path=Path("data1/"),
         source_filename=Path("file1.sav"),
         read_access=True,
@@ -159,7 +159,7 @@ def test_extract_version(test_input: str, expected: int | None):
     assert result == expected
 
 
-def test_create_manifest(db_file: Path | str, file_metadata: Sequence[FileMeta]) -> None:
+def test_create_manifest(db_file: Path | str, file_metadata: Sequence[FileMetaRecord]) -> None:
     """Test manifest creation."""
     create_manifest(file_metadata, db_file)
 

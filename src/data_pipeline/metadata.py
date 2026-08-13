@@ -188,4 +188,4 @@ def run_init(root_dir: Path, db_file: Path) -> None:
     logger = logging.getLogger(__name__)
     file_metadata = collect_file_info(root_dir)
     create_manifest(file_metadata, db_file)
-    logger.info("Created %s with file metadata from %s", str(root_dir), str(db_file))
+    logger.info("Created %s with file metadata in %s", str(root_dir), str(db_file))

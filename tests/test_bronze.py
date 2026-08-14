@@ -11,6 +11,7 @@ import pyreadstat
 import pytest
 from polars.testing import assert_frame_equal
 from data_pipeline.bronze import DEFAULT_CHUNKSIZE
+from data_pipeline.bronze import build
 from data_pipeline.bronze import ingest_source
 from data_pipeline.bronze import stream_to_bronze
 from data_pipeline.bronze import write_column_metadata_to_db
@@ -18,7 +19,16 @@ from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SourceManifest
 
 
-class TestBronze:
+class TestBase:
+    """Base class with test configs and fixtures."""
+
+    @pytest.fixture
+    def db_file(self, tmp_path: Path) -> Path:
+        """File for metadata database."""
+        return tmp_path / "metadata.db"
+
+
+class TestBronze(TestBase):
     """Test conversion from source to bronze."""
 
     sample_size: int = 100_000
@@ -38,11 +48,6 @@ class TestBronze:
         "sector": {"1": "sector a", "2": "sector b", "3": "sector c", "99": "missing"},
         "wage": {9999999999.0: "missing", 9999999998.0: "also missing"},
     }
-
-    @pytest.fixture
-    def db_file(self, tmp_path: Path) -> Path:
-        """File for metadata database."""
-        return tmp_path / "metadata.db"
 
     @pytest.fixture
     def sav_file(self, tmp_path: Path) -> Path:
@@ -226,7 +231,10 @@ class TestBronze:
     ) -> None:
         """Integration test for ingest_source function."""
         dest_file = tmp_path / self.file_out
-        ingest_source(db_file=db_file, source_path=tmp_path, source_filename=self.file_in, dest_file=dest_file)
+        source_manifest = SourceManifest(db_file=db_file)
+        ingest_source(
+            source_manifest=source_manifest, source_path=tmp_path, source_filename=self.file_in, dest_file=dest_file
+        )
 
         source_manifest = SourceManifest(db_file=db_file)
         lookup = {"source_path": tmp_path, "source_filename": self.file_in}
@@ -239,3 +247,52 @@ class TestBronze:
 
         mock_stream_to_bronze.assert_called_once_with(tmp_path / self.file_in, dest_file, DEFAULT_CHUNKSIZE)
         mock_write_column_metadata_to_db.assert_called_once_with(db_file, tmp_path, self.file_in)
+
+
+class TestBuild(TestBase):
+    """Test bronze build."""
+
+    @pytest.fixture
+    def metadata_db(self, tmp_path: Path, db_file: Path):
+        """Database with file metadata."""
+        file_record1 = FileMetaRecord(
+            source_path=tmp_path,
+            source_filename=Path("SPOLISBUS2020.sav"),
+            read_access=True,
+            last_modified=datetime(2025, 4, 25, tzinfo=UTC),
+            file_size_bytes=10,
+            ref_period=datetime(2020, 1, 1, tzinfo=UTC),
+            version=3,
+        )
+        file_record2 = FileMetaRecord(
+            source_path=tmp_path,
+            source_filename=Path("SPOLISBUS2021.sav"),
+            read_access=True,
+            last_modified=datetime(2025, 6, 25, tzinfo=UTC),
+            file_size_bytes=10,
+            ref_period=datetime(2021, 1, 1, tzinfo=UTC),
+            version=2,
+        )
+        file_record3 = FileMetaRecord(
+            source_path=tmp_path,
+            source_filename=Path("SPOLISBUS2022.sav"),
+            read_access=True,
+            last_modified=datetime(2023, 9, 1, tzinfo=UTC),
+            file_size_bytes=10,
+            ref_period=datetime(2022, 1, 1, tzinfo=UTC),
+            version=2,
+        )
+
+        table = SourceManifest(db_file=db_file)
+        table.create_from_record(file_record1)
+        table.insert_many([file_record1, file_record2, file_record3])
+
+    @pytest.mark.usefixtures("metadata_db")
+    @mock.patch("data_pipeline.bronze.ingest_source")
+    def test_build(self, mock_ingest_source: mock.Mock, db_file: Path, tmp_path: Path):
+        """Test bronze build."""
+        dest_dir = tmp_path / "processed"
+        build(db_file, "SPOLIS", 2020, 2021, dest_dir)
+
+        expected_calls = 2
+        assert mock_ingest_source.call_count == expected_calls, "Ingest source not called as expected."

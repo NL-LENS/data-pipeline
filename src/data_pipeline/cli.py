@@ -48,8 +48,8 @@ def cli_main() -> None:
             run_init(args.root, args.db_file)
         case "build":
             if args.color == "bronze":
-                start_year = min(args.ref_period)
-                end_year = max(args.ref_period)
+                start_year = int(min(args.ref_period))
+                end_year = int(max(args.ref_period))
                 build_bronze(args.db_file, args.source_regex, start_year, end_year, args.dest_dir)
             else:
                 raise NotImplementedError

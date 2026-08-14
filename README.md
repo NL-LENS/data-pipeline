@@ -7,13 +7,17 @@ Rough steps:
 2. Read raw data and save as parquet
 3. Minimally process raw data to a silver layer in event format
 
-## Setup
+## Usage -- experimental
 
 ```bash
-uv sync
+python -m pip install 'data-pipeline @ git+https://github.com/NL-LENS/data-pipeline@cli'
 
-source .venv/bin/activate
-pytest
+lens init --db_file lens.duckdb --root G:/
+lens build bronze \
+  --db_file lens.duckdb \
+  --source_regex INPATAB \
+  --ref_period 2015 2020 \
+  --dest_dir data_processed/bronze/
 ```
 
 ### Architecture
@@ -27,7 +31,7 @@ is not part of the database, but stored in parquet files.
  data processing at various stages.
 
 
-## Development
+## Development setup
 
 ```bash
 uv sync --extra dev

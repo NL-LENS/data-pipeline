@@ -1,9 +1,11 @@
 """Read files, store metadata and save as Parquet."""
 
+import logging
 from collections.abc import Sequence
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
+import duckdb
 import pyarrow.parquet as pq
 import pyreadstat
 from data_pipeline.metadata import get_file_stats
@@ -11,8 +13,11 @@ from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SavMetaRecord
 from data_pipeline.schemas import SavMetaTable
 from data_pipeline.schemas import SourceManifest
+from data_pipeline.utils import quote_identifier
 
 DEFAULT_CHUNKSIZE = 100_000
+
+logger = logging.getLogger(__name__)
 
 
 def read_sav_meta(file: Path | str) -> pyreadstat.metadata_container:
@@ -107,7 +112,9 @@ def read_table_meta_to_db(db_file: Path | str, source_path: Path, source_filenam
     table.insert_many(sav_metadata)
 
 
-def ingest_source(db_file: Path | str, source_path: Path, source_filename: Path, dest_file: Path | str) -> None:
+def ingest_source(
+    source_manifest: SourceManifest, source_path: Path, source_filename: Path, dest_file: Path | str
+) -> None:
     """Ingest a source file from raw to bronze.
 
     The function does 3 things:
@@ -117,8 +124,8 @@ def ingest_source(db_file: Path | str, source_path: Path, source_filename: Path,
 
     Arguments
     ---------
-    db_file:
-        Path to the database with metadata.
+    source_manifest:
+        SourceManifest object to be used.
     source_path:
         Path to the folder of `source_filename`.
     source_filename:
@@ -131,7 +138,7 @@ def ingest_source(db_file: Path | str, source_path: Path, source_filename: Path,
     DuckDB errors (TBD) if source_manifest table does not exist or
     when the specified .sav file is not in the database.
     """
-    source_manifest = SourceManifest(db_file=db_file)
+    logger.info("Ingesting %s/%s", source_path, source_filename)
 
     lookup = {"source_path": source_path, "source_filename": source_filename}
     file_metadata = FileMetaRecord.from_table(lookup=lookup, table=source_manifest)
@@ -150,7 +157,64 @@ def ingest_source(db_file: Path | str, source_path: Path, source_filename: Path,
     source_manifest.update(file_metadata)
 
     # Update or create table metadata
-    read_table_meta_to_db(db_file, source_path, source_filename)
+    read_table_meta_to_db(source_manifest.db_file, source_path, source_filename)
+    logger.info("Done.")
+
+
+def build(db_file: Path, source_regex: str, start_year: int, end_year: int, dest_dir: Path) -> None:
+    """Build a set of bronze datasets.
+
+    Arguments
+    ---------
+    db_file:
+        Path to the database with metadata.
+    source_regex:
+        String to fuzzy-search the paths and file names for.
+    start_year:
+        First year for the reference period.
+    end_year:
+        Last year of the reference period.
+    dest_dir:
+        Destination directory to save the processed files to. The resulting
+        filename is replicated from the filename of the source, with `.sav`
+        replaced by `.parquet`. If it does not exist, it is created, including
+        all parents.
+
+    Notes
+    -----
+    For the reference period, start_year and end_year are both included.
+    Datasets with missing reference period are ignored.
+    """
+    source_manifest = SourceManifest(db_file=db_file)
+    # TODO: currently assumes there's only one version for each file.
+
+    with duckdb.connect(db_file) as con:
+        # TODO: not sure yet what's the best way to query multiple
+        # records in the tables. Plain sql for now.
+        con.sql("SET TIMEZONE='UTC'")
+        regex_param = f"%{source_regex}%"
+        start_year_param = f"{start_year}-01-01"
+        end_year_param = f"{end_year}-12-31"
+        # ruff: disable[S608]
+        sql = f"""
+           SELECT source_path, source_filename
+           FROM {quote_identifier(source_manifest.table_name)}
+           WHERE
+              source_filename like ?
+              AND ref_period >= ?
+              AND ref_period <= ?
+        """
+        # ruff: enable[S608]
+        params = (regex_param, start_year_param, end_year_param)
+        datasets_to_process = con.execute(sql, params).fetchall()
+
+    if len(datasets_to_process) == 0:
+        return
+
+    dest_dir.mkdir(exist_ok=True, parents=True)
+    for source_path, source_filename in datasets_to_process:
+        dest_filename = dest_dir / Path(source_filename).with_suffix(".parquet").name
+        ingest_source(source_manifest, Path(source_path), Path(source_filename), dest_filename)
 
 
 # variable_value_labels -> for categorical labels and missing numeric labels

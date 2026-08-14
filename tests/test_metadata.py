@@ -4,6 +4,7 @@ from datetime import UTC
 from datetime import datetime
 from pathlib import Path
 from typing import ClassVar
+from unittest import mock
 import duckdb
 import pytest
 from data_pipeline.metadata import RAW_DATA_FILE_TYPES
@@ -12,6 +13,7 @@ from data_pipeline.metadata import create_manifest
 from data_pipeline.metadata import extract_ref_period
 from data_pipeline.metadata import extract_version
 from data_pipeline.metadata import filter_list
+from data_pipeline.metadata import run_init
 from data_pipeline.schemas import FileMetaRecord
 
 
@@ -177,3 +179,14 @@ def test_create_manifest(db_file: Path | str, file_metadata: Sequence[FileMetaRe
         expected_name = "source_manifest"
         count = con.execute(f"SELECT COUNT(*) FROM {expected_name}").fetchone()[0]  # noqa: S608
         assert count == len(file_metadata), "Incorrect number of rows"
+
+
+@mock.patch("data_pipeline.metadata.collect_file_info")
+@mock.patch("data_pipeline.metadata.create_manifest")
+def test_run_init(patched_create_manifest: mock.Mock, patched_collect_file_info: mock.Mock):
+    """Test run_init calls correct functions."""
+    root_dir = Path("path/to/root_dir")
+    db_file = Path("db_file.db")
+    run_init(root_dir, db_file)
+    patched_collect_file_info.assert_called_once_with(root_dir)
+    patched_create_manifest.assert_called_once()

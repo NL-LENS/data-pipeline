@@ -16,6 +16,17 @@ source .venv/bin/activate
 pytest
 ```
 
+### Architecture
+
+The core is a database with metadata about files and `.sav` tables
+used for registry research.
+- All *actual data* (content of `.sav` tables)
+is not part of the database, but stored in parquet files.
+- The idea is that the database stores all information on the available and used
+ datasets in a registry data project, and provides information relevant for
+ data processing at various stages.
+
+
 ## Development
 
 ```bash

@@ -154,5 +154,6 @@ def ingest_source(db_file: Path | str, source_path: Path, source_filename: Path,
     source_manifest.update(file_metadata)
 
     # Create table metadata
-    # TODO: foreign key constraint fails when metadata of the same file are already present.
+    # TODO: this creates duplicates because pre-existing data with same FK are not removed,
+    # and no primary key constraint is in place.
     write_column_metadata_to_db(db_file, source_path, source_filename)

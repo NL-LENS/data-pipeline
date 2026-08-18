@@ -163,6 +163,7 @@ class TestBronze:
         # The null_col is completely missing in the underlying .sav file, and
         # read as pl.Null column
         expected_data = expected_data.with_columns(pl.lit(None).alias("null_col"))
+        expected_data.columns = [col.upper() for col in expected_data.columns]
         file_path_out = tmp_path / self.file_out
         stream_to_bronze(sav_file, file_path_out, chunk_size=9_999)
 
@@ -182,10 +183,15 @@ class TestBronze:
         write_column_metadata_to_db(db_file, source_path=sav_file.parent, source_filename=sav_file.name)
 
         with duckdb.connect(db_file) as con:
-            data = con.sql("SELECT variable, description from sav_meta").fetchall()
+            data = con.sql("SELECT variable, original_variable, description from sav_meta").fetchall()
 
         assert len(data) == len(self.sav_column_labels), "Incorrect number of variables recorded."
-        expected_data = list(self.sav_column_labels.items())
+
+        expected_data = []
+        for column_name, label in self.sav_column_labels.items():
+            column_name_upper = column_name.upper()
+            expected_data.append((column_name_upper, column_name, label))
+
         assert data == expected_data, "Variable name and description incorrectly recorded."
 
     @pytest.mark.usefixtures("metadata_db")

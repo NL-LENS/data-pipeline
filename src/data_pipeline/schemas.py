@@ -87,6 +87,8 @@ class SavColumnMeta(DuckDBRecord):
     source_filename:
         file name, including suffix.
     variable:
+        the upper-cased variable name, as it is stored in the parquet file.
+    original_variable:
         the original variable name, as it is stored in the .sav file.
     readstat_type:
         the column type in the .sav file.
@@ -103,6 +105,7 @@ class SavColumnMeta(DuckDBRecord):
     source_path: Path = field(metadata={"foreign_key": {"table": "source_manifest", "column": "source_path"}})
     source_filename: Path = field(metadata={"foreign_key": {"table": "source_manifest", "column": "source_filename"}})
     variable: str
+    original_variable: str
     readstat_type: str
     description: str | None
     value_labels: dict | None = None  # TODO: may consider alternative to dict/json at some point

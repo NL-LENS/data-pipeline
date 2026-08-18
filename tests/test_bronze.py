@@ -1,3 +1,4 @@
+import json
 import typing
 from datetime import UTC
 from datetime import datetime
@@ -32,6 +33,10 @@ class TestBronze:
         "wage": "Hourly wage",
         "sector": "Economic sector",
         "null_col": "Column added later to the schema.",
+    }
+    variable_value_labels: typing.ClassVar[dict[str, dict[str | int | float, str]]] = {
+        "sector": {"1": "sector a", "2": "sector b", "3": "sector c", "99": "missing"},
+        "wage": {9999999999.0: "missing", 9999999998.0: "also missing"},
     }
 
     @pytest.fixture
@@ -113,18 +118,18 @@ class TestBronze:
         # Check in CBS and update test as necessary
         # According to events_bottom_up, we need to deal with string, float64 and 32, int 8 to 32
         # but probably should be int 16 to 64?
-        variable_value_labels = {
-            "sector": {"1": "sector a", "2": "sector b", "3": "sector c", "99": "missing"},
-            "wage": {9999999999: "missing", 9999999998: "also missing"},
-        }
+
         user_missing_ranges = {
             "sector": [{"hi": "98", "lo": "98"}],
             "wage": [{"lo": 100, "hi": 110}],  # 110 is included upper bound
         }
 
         possible_missing_values = {
-            "sector": ["99", "98"],
-            "wage": [9999999999, 9999999998, *(np.arange(100, 111))],  # allow 110 for the included upper bound
+            "sector": [*(self.variable_value_labels["sector"].keys())],
+            "wage": [
+                *(self.variable_value_labels["wage"].keys()),
+                *(np.arange(100, 111)),
+            ],  # allow 110 for the included upper bound
         }
 
         for column, values in possible_missing_values.items():
@@ -137,7 +142,7 @@ class TestBronze:
             data,
             str(sav_file),
             column_labels=self.sav_column_labels,
-            variable_value_labels=variable_value_labels,
+            variable_value_labels=self.variable_value_labels,
             missing_ranges=user_missing_ranges,
         )
 
@@ -179,11 +184,12 @@ class TestBronze:
     @pytest.mark.usefixtures("metadata_db")
     @pytest.mark.usefixtures("sav_test_data")
     def test_write_column_metadata_to_db(self, sav_file: Path, db_file: Path) -> None:
-        """Minimal test that .sav file metadata are correctly written to the database."""
+        """Test that .sav file metadata are correctly written to the database."""
         write_column_metadata_to_db(db_file, source_path=sav_file.parent, source_filename=sav_file.name)
 
         with duckdb.connect(db_file) as con:
             data = con.sql("SELECT variable, original_variable, description from sav_meta").fetchall()
+            value_labels = con.sql("SELECT original_variable, value_labels from sav_meta").fetchall()
 
         assert len(data) == len(self.sav_column_labels), "Incorrect number of variables recorded."
 
@@ -193,6 +199,19 @@ class TestBronze:
             expected_data.append((column_name_upper, column_name, label))
 
         assert data == expected_data, "Variable name and description incorrectly recorded."
+
+        for column_name, labels in value_labels:
+            exp_labels = self.variable_value_labels.get(column_name, None)
+            if not exp_labels:
+                assert labels is None, "value label not None"
+                continue
+
+            # reading JSON from duckdb returns a dict[str, str]
+            # so need to update the expectation here
+            expected_labels = {}
+            for value, label in exp_labels.items():
+                expected_labels[str(value)] = label
+            assert expected_labels == json.loads(labels), "value label incorrectly recorded."
 
     @pytest.mark.usefixtures("metadata_db")
     @pytest.mark.usefixtures("sav_test_data")

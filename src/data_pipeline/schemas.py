@@ -17,6 +17,13 @@ class SourceManifest(DuckDBTable):
 
 
 @dataclass
+class SavMetaTable(DuckDBTable):
+    """Table for the metadata of columns `.sav` tables."""
+
+    table_name = "sav_meta"
+
+
+@dataclass
 class FileMetaRecord(DuckDBRecord):
     """Define the schema for file metadata records.
 
@@ -62,3 +69,21 @@ class FileMetaRecord(DuckDBRecord):
     bronze_path: Path | None = None
     schema_hash: DuckDBBigInt | None = None
     ingested_at: datetime | None = None
+
+
+@dataclass
+class SavColumnMeta(DuckDBRecord):
+    """Container for metadata of columns in `.sav` files.
+
+    Each instance of this class refers to one column in a `.sav` file, which
+    is identified through the foreign key.
+    When written to a table in the database, each *row* in the metadata table
+    contains the data for one *column* in the table of the underlying `.sav` file.
+    """
+
+    source_path: Path = field(metadata={"foreign_key": {"table": "source_manifest", "column": "source_path"}})
+    source_filename: Path = field(metadata={"foreign_key": {"table": "source_manifest", "column": "source_filename"}})
+    variable: str
+    readstat_type: str
+    description: str | None
+    value_labels: dict | None = None  # TODO: may consider alternative to dict/json at some point

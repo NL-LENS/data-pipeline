@@ -79,6 +79,25 @@ class SavColumnMeta(DuckDBRecord):
     is identified through the foreign key.
     When written to a table in the database, each *row* in the metadata table
     contains the data for one *column* in the table of the underlying `.sav` file.
+
+    Arguments
+    ---------
+    source_path:
+        full path to the location of the file.
+    source_filename:
+        file name, including suffix.
+    variable:
+        the original variable name, as it is stored in the .sav file.
+    readstat_type:
+        the column type in the .sav file.
+    description:
+        the column description in the .sav file.
+    value_labels:
+        a dictionary where dict keys are numeric values in the columns, and
+        dict values are the meaning of this value in the data.
+        For string variables (=categorical variables), this is the meaning
+        of the categories.
+        For numeric variables, this contains the values indicating missingness.
     """
 
     source_path: Path = field(metadata={"foreign_key": {"table": "source_manifest", "column": "source_path"}})

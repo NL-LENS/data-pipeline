@@ -1,7 +1,14 @@
 """Module to read metadata on files of raw data in a location.
 
-Assumptions
-- All raw data are in one root directory.
+The module assumes that all raw data are in one root directory.
+
+Notes
+-----
+The functions `extract_ref_period` and `extract_version`
+are closely linked: intended usage is that, from the same
+input string, they extract a reference year (if present),
+and a version number (if present). See the respective
+examples and tests, for details.
 """
 
 import re
@@ -15,11 +22,15 @@ from data_pipeline.utils import filter_list
 
 RAW_DATA_FILE_TYPES = [".dta", ".sav", ".sas7bdat"]
 
-# AI NOTE: regex built by LLM.
+# AI NOTE: regex built and updated by LLM.
 
 
 def extract_ref_period(x: str) -> datetime | None:
     """Extract reference period from filename string.
+
+    Arguments
+    ---------
+    x: A string, referring to a file name, including file ending.
 
     Returns
     -------
@@ -27,14 +38,25 @@ def extract_ref_period(x: str) -> datetime | None:
 
     Details
     -------
-    A valid substring is either a 4-digit number, or a 6-digit
-    number where the last 2 digits are are between 01 and 12.
+    A valid filename ends, before its extension, with a
+    4-digit year, optionally followed by a 2-digit month
+    between 01 and 12, optionally followed by other non-dot characters,
+    then a version marker `V`, and one or more digits.
 
     For valid substrings, the reference period is coded
     as the start day year-month combination.
     For invalid substrings, None is returned.
+
+    Examples
+    --------
+    >>> extract_ref_period("INPA2024TABV2.sav")
+    >>> 2024
+    >>> extract_version("INPATAB2024X.sav")
+    >>> None # not followed by `V`
+    >>> extract_version("SOMEBUSV20241.sav")
+    >>> None # not followed by `V`
     """
-    match = re.search(r"(\d{4})(\d{2})?V\d+(?:\.[^.]+)?$", x)
+    match = re.search(r"(\d{4})(\d{2})?[^.]*?V\d+(?:\.[^.]+)?$", x)
     first_month = 1
     last_month = 12
     if not match:
@@ -50,7 +72,27 @@ def extract_ref_period(x: str) -> datetime | None:
 
 
 def extract_version(x: str) -> int | None:
-    """Extract version from filename string."""
+    """Extract version from filename string.
+
+    Arguments
+    ---------
+    x: A string, referring to a file name, including file ending.
+
+    Details
+    -------
+    This matches any numbers following a `V`, so also things like
+    "V20241". It is unclear if this is intended behavior or not; depends
+    on CBS naming conventions.
+
+    Examples
+    --------
+    >>> extract_version("INPA2024TABV2.sav")
+    >>> 2
+    >>> extract_version("INPATAB2024X.sav")
+    >>> None # No "V" followed by digit
+    >>> extract_version("SOMEBUSV20241.sav")
+    >>> 20241 # entire number after "V"
+    """
     match = re.search(r"V(\d+)(?:\.[^.]+)?$", x)
     if not match:
         return None

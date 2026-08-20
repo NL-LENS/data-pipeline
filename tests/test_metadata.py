@@ -136,6 +136,10 @@ class TestCollectFileInfo:
         ("INPATAB2015V3.sav", datetime(2015, 1, 1, tzinfo=UTC)),
         ("SPOLIS200905V12.sav", datetime(2009, 5, 1, tzinfo=UTC)),
         ("SPOLIS200913V2.sav", None),
+        ("INPA2024TABV2.sav", datetime(2024, 1, 1, tzinfo=UTC)),
+        ("INPA2024TABX.sav", None),  # no "V" in string -> current assumption on file names
+        ("SOMEOTHERTAB2015LONGERSTRINGV5.sav", datetime(2015, 1, 1, tzinfo=UTC)),
+        ("SOMEBUSV20241.sav", None),  # intentionally NOT extracted: V before number.
     ],
 )
 def test_extract_ref_period(test_input: str, expected: datetime | None):
@@ -151,6 +155,12 @@ def test_extract_ref_period(test_input: str, expected: datetime | None):
         ("SPOLIS200905V12.sav", 12),
         ("SPOLIS200913V2.sav", 2),
         ("SPOLIS2009VX.sav", None),
+        ("INPA2024TABV2.sav", 2),
+        ("INPA2024TABX.sav", None),
+        ("SOMEOTHERTAB2015LONGERSTRINGTABV5.sav", 5),
+        # Unclear if the next one should be expected or not.
+        # Need to better understand CBS version naming.
+        ("SOMEBUSV20241.sav", 20241),
     ],
 )
 def test_extract_version(test_input: str, expected: int | None):

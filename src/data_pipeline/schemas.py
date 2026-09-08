@@ -17,6 +17,13 @@ class SourceManifest(DuckDBTable):
 
 
 @dataclass
+class SavMetaTable(DuckDBTable):
+    """Table for the metadata of columns `.sav` tables."""
+
+    table_name = "sav_meta"
+
+
+@dataclass
 class FileMetaRecord(DuckDBRecord):
     """Define the schema for file metadata records.
 
@@ -62,3 +69,43 @@ class FileMetaRecord(DuckDBRecord):
     bronze_path: Path | None = None
     schema_hash: DuckDBBigInt | None = None
     ingested_at: datetime | None = None
+
+
+@dataclass
+class SavColumnMeta(DuckDBRecord):
+    """Container for metadata of columns in `.sav` files.
+
+    Each instance of this class refers to one column in a `.sav` file, which
+    is identified through the foreign key.
+    When written to a table in the database, each *row* in the metadata table
+    contains the data for one *column* in the table of the underlying `.sav` file.
+
+    Arguments
+    ---------
+    source_path:
+        full path to the location of the file.
+    source_filename:
+        file name, including suffix.
+    variable:
+        the upper-cased variable name, as it is stored in the parquet file.
+    original_variable:
+        the original variable name, as it is stored in the .sav file.
+    readstat_type:
+        the column type in the .sav file.
+    description:
+        the column description in the .sav file.
+    value_labels:
+        a dictionary where dict keys are numeric values in the columns, and
+        dict values are the meaning of this value in the data.
+        For string variables (=categorical variables), this is the meaning
+        of the categories.
+        For numeric variables, this contains the values indicating missingness.
+    """
+
+    source_path: Path = field(metadata={"foreign_key": {"table": "source_manifest", "column": "source_path"}})
+    source_filename: Path = field(metadata={"foreign_key": {"table": "source_manifest", "column": "source_filename"}})
+    variable: str
+    original_variable: str
+    readstat_type: str
+    description: str | None
+    value_labels: dict | None = None  # TODO: may consider alternative to dict/json at some point

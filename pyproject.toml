@@ -133,3 +133,7 @@ filename = "CITATION.cff"
 
 [[tool.bumpversion.files]]
 filename = "docs/conf.py"
+
+[[tool.mypy.overrides]]
+module = ["pyarrow.*"]
+ignore_missing_imports = true

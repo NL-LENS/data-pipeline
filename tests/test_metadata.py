@@ -189,5 +189,5 @@ def test_run_init(patched_create_manifest: mock.Mock, patched_collect_file_info:
     root_dir = Path("path/to/root_dir")
     db_file = Path("db_file.db")
     run_init(root_dir, db_file)
-    patched_collect_file_info.assert_called_once_with(root_dir)
+    patched_collect_file_info.assert_called_once_with(root_dir, None)
     patched_create_manifest.assert_called_once()

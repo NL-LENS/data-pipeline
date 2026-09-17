@@ -24,12 +24,22 @@ def test_cli_can_be_called(lens_command: list[str], monkeypatch: pytest.MonkeyPa
     assert result.returncode == 0
 
 
-def test_cli_init(monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize(
+    ("exclude_dir", "expected_arg"),
+    [
+        ([], None),
+        (["--exclude_dir", "string1", "string2"], ["string1", "string2"]),
+    ],
+    ids=["no_exclude_dir", "two_exclude_dir"],
+)
+def test_cli_init(exclude_dir: list, expected_arg: list | None, monkeypatch: pytest.MonkeyPatch):
     """Test that init calls run_init."""
-    monkeypatch.setattr(sys, "argv", ["lens", "init", "--root", "/path/to/data/root/", "--db_file", "/path/to/db.db"])
+    base_cmd = ["lens", "init", "--root", "/path/to/data/root/", "--db_file", "/path/to/db.db"]
+    cli_cmd = base_cmd + exclude_dir
+    monkeypatch.setattr(sys, "argv", cli_cmd)
     with patch("data_pipeline.cli.run_init") as init_patch:
         data_pipeline.cli.cli_main()
-        init_patch.assert_called_once_with(Path("/path/to/data/root"), Path("/path/to/db.db"))
+        init_patch.assert_called_once_with(Path("/path/to/data/root"), Path("/path/to/db.db"), expected_arg)
 
 
 def test_cli_build(monkeypatch: pytest.MonkeyPatch):

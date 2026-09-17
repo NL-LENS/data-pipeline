@@ -190,9 +190,11 @@ def build(db_file: Path, source_regex: str, start_year: int, end_year: int, dest
     -----
     For the reference period, start_year and end_year are both included.
     Datasets with missing reference period are ignored.
+    Within the datasets matched by source_regex,
+    only the highest version within source_path and ref_period is used.
+    The user should verify that this is the naming pattern used in the source.
     """
     source_manifest = SourceManifest(db_file=db_file)
-    # TODO: currently assumes there's only one version for each file.
 
     with duckdb.connect(db_file) as con:
         # TODO: not sure yet what's the best way to query multiple
@@ -207,8 +209,11 @@ def build(db_file: Path, source_regex: str, start_year: int, end_year: int, dest
            FROM {quote_identifier(source_manifest.table_name)}
            WHERE
               source_filename like ?
-              AND ref_period >= ?
-              AND ref_period <= ?
+              AND ref_period BETWEEN ? AND ?
+           QUALIFY
+              row_number() OVER (
+                  PARTITION BY source_path, ref_period ORDER BY version DESC
+              ) = 1
         """
         # ruff: enable[S608]
         params = (regex_param, start_year_param, end_year_param)

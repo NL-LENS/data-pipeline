@@ -70,6 +70,9 @@ Repository = "https://github.com/NL-LENS/data_pipeline"
 Issues = "https://github.com/NL-LENS/data_pipeline/issues"
 Changelog = "https://github.com/NL-LENS/data_pipeline/CHANGELOG.md"
 
+[project.scripts]
+lens = "data_pipeline:cli.cli_main"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
@@ -133,3 +136,7 @@ filename = "CITATION.cff"
 
 [[tool.bumpversion.files]]
 filename = "docs/conf.py"
+
+[[tool.mypy.overrides]]
+module = ["pyarrow.*"]
+ignore_missing_imports = true

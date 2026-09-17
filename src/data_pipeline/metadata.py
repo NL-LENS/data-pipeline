@@ -11,6 +11,7 @@ and a version number (if present). See the respective
 examples and tests, for details.
 """
 
+import logging
 import re
 from collections.abc import Sequence
 from datetime import UTC
@@ -20,7 +21,7 @@ from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SourceManifest
 from data_pipeline.utils import filter_list
 
-RAW_DATA_FILE_TYPES = [".dta", ".sav", ".sas7bdat"]
+RAW_DATA_FILE_TYPES = [".sav", ".SAV"]
 
 # AI NOTE: regex built and updated by LLM.
 
@@ -127,7 +128,7 @@ def collect_file_info(root_dir: Path | str, exclude_dir: list | None = None) -> 
 
         for file in files:
             full_path = root / file
-            last_modified, file_size_bytes = get_file_stats(full_path)
+            last_modified, file_size_mb = get_file_stats(full_path)
 
             record = FileMetaRecord(
                 source_filename=Path(file),
@@ -136,7 +137,7 @@ def collect_file_info(root_dir: Path | str, exclude_dir: list | None = None) -> 
                 version=extract_version(file),
                 read_access=check_read_access(full_path),
                 last_modified=last_modified,
-                file_size_bytes=file_size_bytes,
+                file_size=file_size_mb,
             )
             data.append(record)
 
@@ -152,17 +153,18 @@ def check_read_access(filepath: Path) -> bool:
         return False
 
 
-def get_file_stats(filepath: Path) -> tuple[datetime, int]:
+def get_file_stats(filepath: Path) -> tuple[datetime, float]:
     """File statistics from stat().
 
     Returns
     -------
-    tuple: First entry is last modification time, second entry is file size.
+    tuple:
+        First entry is last modification time, second entry is file size in MB.
     """
     file_stats = filepath.stat()
     last_modified = datetime.fromtimestamp(file_stats.st_mtime, tz=UTC)
-    file_size_bytes = file_stats.st_size
-    return (last_modified, file_size_bytes)
+    file_size_mb = file_stats.st_size * 1e-6
+    return (last_modified, file_size_mb)
 
 
 def create_manifest(file_metadata: Sequence[FileMetaRecord], db_file: Path | str) -> None:
@@ -180,3 +182,11 @@ def create_manifest(file_metadata: Sequence[FileMetaRecord], db_file: Path | str
     table = SourceManifest(db_file)
     table.create_from_record(file_metadata[0])
     table.insert_many(file_metadata)
+
+
+def run_init(root_dir: Path, db_file: Path, exclude_dir: list[str] | None = None) -> None:
+    """Parse file metadata and create database file."""
+    logger = logging.getLogger(__name__)
+    file_metadata = collect_file_info(root_dir, exclude_dir)
+    create_manifest(file_metadata, db_file)
+    logger.info("Created %s with file metadata in %s", str(root_dir), str(db_file))

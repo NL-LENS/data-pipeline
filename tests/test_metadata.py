@@ -4,6 +4,7 @@ from datetime import UTC
 from datetime import datetime
 from pathlib import Path
 from typing import ClassVar
+from unittest import mock
 import duckdb
 import pytest
 from data_pipeline.metadata import RAW_DATA_FILE_TYPES
@@ -12,6 +13,7 @@ from data_pipeline.metadata import create_manifest
 from data_pipeline.metadata import extract_ref_period
 from data_pipeline.metadata import extract_version
 from data_pipeline.metadata import filter_list
+from data_pipeline.metadata import run_init
 from data_pipeline.schemas import FileMetaRecord
 
 
@@ -32,7 +34,7 @@ def file_metadata() -> Sequence[FileMetaRecord]:
         source_filename=Path("file0.dta"),
         read_access=False,
         last_modified=datetime(2013, 2, 15, tzinfo=UTC),
-        file_size_bytes=120,
+        file_size=120.9,
         ref_period=datetime(2012, 1, 1, tzinfo=UTC),
         version=2,
     )
@@ -41,7 +43,7 @@ def file_metadata() -> Sequence[FileMetaRecord]:
         source_filename=Path("file1.sav"),
         read_access=True,
         last_modified=datetime(2017, 2, 15, tzinfo=UTC),
-        file_size_bytes=5000,
+        file_size=5000.42,
         ref_period=datetime(2015, 1, 1, tzinfo=UTC),
         version=4,
     )
@@ -66,6 +68,7 @@ class TestCollectFileInfo:
         Path("data1/file_c.sav"),
         Path("data1/file_d.sas7bdat"),
         Path("data1/file_e.xlsx"),
+        Path("data2/file_f.SAV"),
     ]
     paths_without_access: ClassVar = [Path("data1/file_c.sav")]
 
@@ -177,3 +180,14 @@ def test_create_manifest(db_file: Path | str, file_metadata: Sequence[FileMetaRe
         expected_name = "source_manifest"
         count = con.execute(f"SELECT COUNT(*) FROM {expected_name}").fetchone()[0]  # noqa: S608
         assert count == len(file_metadata), "Incorrect number of rows"
+
+
+@mock.patch("data_pipeline.metadata.collect_file_info")
+@mock.patch("data_pipeline.metadata.create_manifest")
+def test_run_init(patched_create_manifest: mock.Mock, patched_collect_file_info: mock.Mock):
+    """Test run_init calls correct functions."""
+    root_dir = Path("path/to/root_dir")
+    db_file = Path("db_file.db")
+    run_init(root_dir, db_file)
+    patched_collect_file_info.assert_called_once_with(root_dir, None)
+    patched_create_manifest.assert_called_once()

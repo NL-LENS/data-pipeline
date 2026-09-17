@@ -260,7 +260,7 @@ class TestBuild(TestBase):
             source_filename=Path("SPOLISBUS2020.sav"),
             read_access=True,
             last_modified=datetime(2025, 4, 25, tzinfo=UTC),
-            file_size_bytes=10,
+            file_size=10.34,
             ref_period=datetime(2020, 1, 1, tzinfo=UTC),
             version=3,
         )
@@ -269,7 +269,7 @@ class TestBuild(TestBase):
             source_filename=Path("SPOLISBUS2021.sav"),
             read_access=True,
             last_modified=datetime(2025, 6, 25, tzinfo=UTC),
-            file_size_bytes=10,
+            file_size=10.35,
             ref_period=datetime(2021, 1, 1, tzinfo=UTC),
             version=2,
         )
@@ -278,7 +278,7 @@ class TestBuild(TestBase):
             source_filename=Path("SPOLISBUS2022.sav"),
             read_access=True,
             last_modified=datetime(2023, 9, 1, tzinfo=UTC),
-            file_size_bytes=10,
+            file_size=10.8,
             ref_period=datetime(2022, 1, 1, tzinfo=UTC),
             version=2,
         )

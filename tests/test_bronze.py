@@ -26,7 +26,7 @@ class TestBronze:
     file_in: Path = Path("file_in.sav")
     missing_file: Path = Path("missing_file.sav")
     file_out: str = "file_out.parquet"
-    size_file_in: int = 5
+    size_file_in: float = 4.68
     sav_column_labels: typing.ClassVar[dict[str, str]] = {
         "person_id": "Person identifier",
         "date": "Reference date of the event",
@@ -57,7 +57,7 @@ class TestBronze:
             source_filename=self.file_in,
             read_access=True,
             last_modified=datetime(2025, 4, 25, tzinfo=UTC),
-            file_size_bytes=self.size_file_in,
+            file_size=self.size_file_in,
             ref_period=None,
             version=None,
         )
@@ -66,7 +66,7 @@ class TestBronze:
             source_filename=self.missing_file,
             read_access=True,
             last_modified=datetime(2023, 10, 15, tzinfo=UTC),
-            file_size_bytes=10,
+            file_size=10.5,
             ref_period=None,
             version=None,
         )
@@ -233,7 +233,7 @@ class TestBronze:
         file_meta_record = FileMetaRecord.from_table(table=source_manifest, lookup=lookup)
 
         assert file_meta_record.bronze_path == dest_file, "Bronze path not recorded."
-        assert file_meta_record.file_size_bytes > self.size_file_in, "File size not updated."
+        assert file_meta_record.file_size > self.size_file_in, "File size not updated."
         assert file_meta_record.version is None, "version modified when it should not."
         assert file_meta_record.ref_period is None, "ref period modified when it should not."
 

@@ -144,12 +144,12 @@ def ingest_source(db_file: Path | str, source_path: Path, source_filename: Path,
     stream_to_bronze(full_path_to_sav_file, dest_file, DEFAULT_CHUNKSIZE)
 
     # Update file metadata
-    last_modified, file_size_bytes = get_file_stats(full_path_to_sav_file)
+    last_modified, file_size_mb = get_file_stats(full_path_to_sav_file)
 
     file_metadata.ingested_at = datetime.now(UTC)
     file_metadata.bronze_path = Path(dest_file).absolute()
     file_metadata.last_modified = last_modified
-    file_metadata.file_size_bytes = file_size_bytes
+    file_metadata.file_size = file_size_mb
 
     source_manifest.update(file_metadata)
 

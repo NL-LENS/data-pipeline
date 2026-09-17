@@ -32,7 +32,7 @@ def file_metadata() -> Sequence[FileMetaRecord]:
         source_filename=Path("file0.dta"),
         read_access=False,
         last_modified=datetime(2013, 2, 15, tzinfo=UTC),
-        file_size_bytes=120,
+        file_size=120.9,
         ref_period=datetime(2012, 1, 1, tzinfo=UTC),
         version=2,
     )
@@ -41,7 +41,7 @@ def file_metadata() -> Sequence[FileMetaRecord]:
         source_filename=Path("file1.sav"),
         read_access=True,
         last_modified=datetime(2017, 2, 15, tzinfo=UTC),
-        file_size_bytes=5000,
+        file_size=5000.42,
         ref_period=datetime(2015, 1, 1, tzinfo=UTC),
         version=4,
     )

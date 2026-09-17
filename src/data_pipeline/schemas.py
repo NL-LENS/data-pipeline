@@ -37,8 +37,8 @@ class FileMetaRecord(DuckDBRecord):
         Indicates whether the file is read-accessible.
     last_modified:
         Date and time of last modification, in UTC format.
-    file_size_bytes:
-        Size of the file.
+    file_size:
+        Size of the file in MB.
     ref_period:
         If available, the date and time of the reference period. See :func:`~extract_ref_period`.
     version
@@ -63,7 +63,7 @@ class FileMetaRecord(DuckDBRecord):
     source_filename: Path = field(metadata={"primary_key": True})
     read_access: bool
     last_modified: datetime
-    file_size_bytes: int
+    file_size: float
     ref_period: datetime | None
     version: int | None
     bronze_path: Path | None = None

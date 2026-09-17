@@ -66,6 +66,7 @@ class TestCollectFileInfo:
         Path("data1/file_c.sav"),
         Path("data1/file_d.sas7bdat"),
         Path("data1/file_e.xlsx"),
+        Path("data2/file_f.SAV"),
     ]
     paths_without_access: ClassVar = [Path("data1/file_c.sav")]
 

@@ -19,6 +19,9 @@ def cli_main() -> None:
     init_parser = subparsers.add_parser("init")
     init_parser.add_argument("--root", type=Path, help="Data root directory.")
     init_parser.add_argument("--db_file", type=Path, help="Path to the database file to be created.")
+    init_parser.add_argument(
+        "--exclude_dir", nargs="*", help="Exclude directories whose names contain any of the provided strings here."
+    )
 
     build_parser = subparsers.add_parser("build")
     build_parser.add_argument("color", choices=["bronze"], type=str, help="Which color layer to build")
@@ -45,7 +48,7 @@ def cli_main() -> None:
 
     match args.command:
         case "init":
-            run_init(args.root, args.db_file)
+            run_init(args.root, args.db_file, args.exclude_dir)
         case "build":
             if args.color == "bronze":
                 start_year = int(min(args.ref_period))

@@ -37,6 +37,7 @@ is not part of the database, but stored in parquet files.
 uv sync --extra dev
 
 source .venv/bin/activate
+uv pip install -e ./
 pytest
 ```
 

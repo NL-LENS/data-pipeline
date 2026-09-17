@@ -20,7 +20,7 @@ from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SourceManifest
 from data_pipeline.utils import filter_list
 
-RAW_DATA_FILE_TYPES = [".dta", ".sav", ".sas7bdat"]
+RAW_DATA_FILE_TYPES = [".sav", ".SAV"]
 
 # AI NOTE: regex built and updated by LLM.
 

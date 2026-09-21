@@ -92,6 +92,9 @@ class SavColumnMeta(DuckDBRecord):
         the original variable name, as it is stored in the .sav file.
     readstat_type:
         the column type in the .sav file.
+    variable_measure:
+        the measurement level declared in the .sav file: one of
+        "nominal", "ordinal", "scale" or "unknown".xw
     description:
         the column description in the .sav file.
     value_labels:
@@ -107,5 +110,6 @@ class SavColumnMeta(DuckDBRecord):
     variable: str
     original_variable: str
     readstat_type: str
+    variable_measure: str
     description: str | None
     value_labels: dict | None = None  # TODO: may consider alternative to dict/json at some point

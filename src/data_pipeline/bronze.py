@@ -56,6 +56,7 @@ def parse_sav_meta(source_path: Path, source_filename: Path | str) -> Sequence[S
             readstat_type=readstat_type,
             description=meta.column_names_to_labels.get(var_name),
             value_labels=meta.variable_value_labels.get(var_name),
+            variable_measure=meta.variable_measure.get(var_name),
         )
         sav_metadata.append(record)
 

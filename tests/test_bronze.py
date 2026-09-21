@@ -106,8 +106,6 @@ class TestBronze(TestBase):
         For numeric values, a value label can also indicate a missing value, but they
         are stored as-is in the .sav file.
         """
-        # TODO: try with other numeric types? float32, int32, in64?
-
         data_dict = {
             "person_id": self.rng.integers(1, 1_000_000_000, size=self.sample_size).astype(
                 str

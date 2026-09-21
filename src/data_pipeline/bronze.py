@@ -189,10 +189,11 @@ def build(db_file: Path, source_regex: str, start_year: int, end_year: int, dest
     Notes
     -----
     For the reference period, start_year and end_year are both included.
-    Datasets with missing reference period are ignored.
     Within the datasets matched by source_regex,
     only the highest version within source_path and ref_period is used.
-    The user should verify that this is the naming pattern used in the source.
+
+    This function is currently experimental. For instance, datasets
+    with missing reference period are ignored.
     """
     source_manifest = SourceManifest(db_file=db_file)
 
@@ -216,6 +217,10 @@ def build(db_file: Path, source_regex: str, start_year: int, end_year: int, dest
               ) = 1
         """
         # ruff: enable[S608]
+        # NOTE: the `ORDER BY version DESC` could choose a random row
+        # if version is NULL; however, it's not clear this can happen
+        # within the primary key constraint of the table that guarantees that
+        # file name are unique.
         params = (regex_param, start_year_param, end_year_param)
         datasets_to_process = con.execute(sql, params).fetchall()
 

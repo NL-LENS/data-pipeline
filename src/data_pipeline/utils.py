@@ -52,12 +52,15 @@ def filter_list(list_in: list, drop_patterns: list) -> list:
     list_in: The list to process.
     drop_patterns: A list of patterns to drop. Elements in `list_in` that
     contain a substring matching any of the `drop_patterns` are dropped.
+    Matching ignores case, since the source data sit on a case-insensitive
+    Windows share.
 
     Returns
     -------
     The modified list.
     """
-    return list(filterfalse(lambda x: any(y in x for y in drop_patterns), list_in))
+    patterns = [y.lower() for y in drop_patterns]
+    return list(filterfalse(lambda x: any(y in x.lower() for y in patterns), list_in))
 
 
 def is_optional(field: type | str) -> bool:

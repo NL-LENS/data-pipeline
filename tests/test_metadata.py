@@ -53,9 +53,9 @@ def file_metadata() -> Sequence[FileMetaRecord]:
 
 def test_filter_list():
     """Test filter_list."""
-    list_in = ["some_dir", "another_dir", "Maatwerk", "geconverteerde Daten"]
+    list_in = ["some_dir", "another_dir", "Maatwerk", "geconverteerde Daten", "Geconverteerde Data"]
     expected = ["some_dir", "another_dir"]
-    output = filter_list(list_in, ["Maatwerk", "geconverteerde"])
+    output = filter_list(list_in, ["maatwerk", "geconverteerde"])
     assert set(expected) == set(output)
 
 

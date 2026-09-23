@@ -51,3 +51,34 @@ act -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest -W .github/workflows
 cat .ci_log.txt | grep Job # see status of each job run
 rm -rf .ci_log.txt
 ```
+
+## Command line
+
+Install the project with `uv sync`, then initialize the source manifest:
+
+```bash
+uv run lens init --root /path/to/raw --db_file metadata.duckdb
+uv run lens build bronze --db_file metadata.duckdb --source_regex EXAMPLE \
+  --ref_period 2020 2021 --dest_dir data/bronze --offset_workaround
+```
+
+The build selects readable files with reference periods in the inclusive year
+range. `--source_regex` is a SQL `LIKE` pattern matched within filenames (not a
+regular expression). For each source path and reference period, only the highest
+version is processed. Sources without a reference period are skipped.
+
+SAV files are read with multiprocessing in chunks of 500,000 rows, using the
+visible CPU count minus one (at least one worker). Use `--chunk_size` to change
+the number of rows per chunk.
+
+- `--offset_workaround` uses explicit row offsets instead of pyreadstat's chunk
+  helper. Both paths use Polars, including metadata reads.
+- `--benchmark` times whole chunks until at least 10% of each source is written.
+  A small source can therefore be processed in full. Samples are written as
+  `*.benchmark.parquet`, leaving normal output and ingestion metadata unchanged.
+- Both flags default to false and take no value: use `--benchmark` and
+  `--offset_workaround`, not `--benchmark true` or `--offset_workaround true`.
+- Progress includes per-chunk read/write times and total elapsed time. Benchmark
+  output also reports average throughput. Timing excludes the initial metadata
+  and schema reads.
+- Add `-v` for informational logging or `-vv` for debug logging.

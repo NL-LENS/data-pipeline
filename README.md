@@ -10,7 +10,7 @@ Rough steps:
 ## Usage -- experimental
 
 ```bash
-python -m pip install 'data-pipeline @ git+https://github.com/NL-LENS/data-pipeline@cli'
+python -m pip install 'data-pipeline @ git+https://github.com/NL-LENS/data-pipeline'
 
 lens init --db_file lens.duckdb --root G:/
 lens build bronze \

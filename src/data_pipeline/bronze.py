@@ -117,7 +117,11 @@ def write_column_metadata_to_db(db_file: Path | str, source_path: Path, source_f
 
 
 def ingest_source(
-    source_manifest: SourceManifest, source_path: Path, source_filename: Path, dest_file: Path | str
+    source_manifest: SourceManifest,
+    source_path: Path,
+    source_filename: Path,
+    dest_file: Path | str,
+    chunk_size: int | None = None,
 ) -> None:
     """Ingest a source file from raw to bronze.
 
@@ -136,6 +140,8 @@ def ingest_source(
         Name of the .sav file to read.
     dest_file:
         The full path to the .parquet file to write.
+    chunk_size:
+        Number of rows to process in one chunk.
 
     Raises
     ------
@@ -148,7 +154,8 @@ def ingest_source(
     file_metadata = FileMetaRecord.from_table(lookup=lookup, table=source_manifest)
 
     full_path_to_sav_file = source_path / source_filename
-    stream_to_bronze(full_path_to_sav_file, dest_file, DEFAULT_CHUNKSIZE)
+    chunk_size = chunk_size or DEFAULT_CHUNKSIZE
+    stream_to_bronze(full_path_to_sav_file, dest_file, chunk_size)
 
     # Update file metadata
     last_modified, file_size_mb = get_file_stats(full_path_to_sav_file)
@@ -167,7 +174,15 @@ def ingest_source(
     logger.info("Done.")
 
 
-def build(db_file: Path, source_regex: str, start_year: int, end_year: int, dest_dir: Path) -> None:
+# ruff: disable[PLR0913]
+def build(
+    db_file: Path,
+    source_regex: str,
+    start_year: int,
+    end_year: int,
+    dest_dir: Path,
+    chunk_size: int | None,
+) -> None:
     """Build a set of bronze datasets.
 
     Arguments
@@ -185,6 +200,8 @@ def build(db_file: Path, source_regex: str, start_year: int, end_year: int, dest
         filename is replicated from the filename of the source, with `.sav`
         replaced by `.parquet`. If it does not exist, it is created, including
         all parents.
+    chunk_size:
+        Number of rows to process per chunk.
 
     Notes
     -----
@@ -230,4 +247,7 @@ def build(db_file: Path, source_regex: str, start_year: int, end_year: int, dest
     dest_dir.mkdir(exist_ok=True, parents=True)
     for source_path, source_filename in datasets_to_process:
         dest_filename = dest_dir / Path(source_filename).with_suffix(".parquet").name
-        ingest_source(source_manifest, Path(source_path), Path(source_filename), dest_filename)
+        ingest_source(source_manifest, Path(source_path), Path(source_filename), dest_filename, chunk_size)
+
+
+# ruff: enable[PLR0913]

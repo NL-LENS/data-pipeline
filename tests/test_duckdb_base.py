@@ -4,6 +4,9 @@ from dataclasses import fields
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+from typing import Union
+from typing import get_args
 import duckdb
 import pytest
 from data_pipeline.duckdb_base import DuckDBBigInt
@@ -11,6 +14,7 @@ from data_pipeline.duckdb_base import DuckDBDouble
 from data_pipeline.duckdb_base import DuckDBRecord
 from data_pipeline.duckdb_base import DuckDBTable
 from data_pipeline.duckdb_base import ForeignKey
+from data_pipeline.duckdb_base import cast_union_types
 
 # TODO: use pytest magic to avoid repeated setup and speed up tests
 # TODO: test with multiple primary keys?
@@ -44,6 +48,32 @@ def db_table(tmp_path: Path) -> TableForTesting:
     """Sample table instance."""
     db_file = tmp_path / "test.db"
     return TableForTesting(db_file=db_file)
+
+
+@pytest.mark.parametrize(
+    ("declared_types", "field_value", "expected_result"),
+    [
+        (get_args(int | Path | None), "/some/path", Path("/some/path")),
+        (get_args(int | None), 9.0, 9),
+        (get_args(dict | None), '{"9":"missing"}', {"9": "missing"}),
+    ],
+)
+def test_cast_union_types(declared_types: Union, field_value: Any, expected_result: Any) -> None:  # noqa: ANN401
+    """Test cast_union_types function."""
+    assert cast_union_types(declared_types, field_value) == expected_result, "Argument cast incorrectly"
+
+
+@pytest.mark.parametrize(
+    ("declared_types", "field_value"),
+    [
+        (get_args(int | None), "/some/path"),
+        (get_args(dict | None), "not parseable to dict"),
+    ],
+)
+def test_cast_union_types_raises(declared_types: Union, field_value: Any) -> None:  # noqa: ANN401
+    """Test cast_union_types function raises error."""
+    with pytest.raises(RuntimeError):
+        _ = cast_union_types(declared_types, field_value)
 
 
 class TestDuckDBRecord:

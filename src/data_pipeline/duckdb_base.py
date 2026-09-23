@@ -37,6 +37,7 @@ records to the `insert` or `insert_many` method of the table class.
 passing the record with the updated data.
 """
 
+import json
 import types
 from collections.abc import Iterable
 from dataclasses import asdict
@@ -62,6 +63,36 @@ from data_pipeline.utils import where_query_params
 DuckDBBigInt = NewType("DuckDBBigInt", int)
 DuckDBDouble = NewType("DuckDBDouble", float)
 # UBIGINT, UINTEGER omitted: unclear if necessary
+
+
+def cast_union_types(field_type_arguments: tuple[Any, ...], value: Any) -> Any:  # noqa: ANN401
+    """Cast `value` to permissible types according to declared field_type_arguments.
+
+    Arguments
+    ---------
+    field_type_arguments:
+        Column types for the field. Extracted from a typing.Union with typing.get_args.
+        See also https://docs.python.org/3/library/typing.html#typing.get_args.
+    value:
+        The value, read from database, to be cast.
+
+    Raises
+    ------
+    RuntimeError if none of the declared field types can be mapped to python
+    types.
+    """
+    castable_types = filterfalse(lambda x: x is types.NoneType, field_type_arguments)
+    for castable_type in castable_types:
+        try:
+            result = json.loads(value) if castable_type is dict else castable_type(value)
+            # mapping to dict with json.loads is implied by the defined mapping of python dictionary to
+            # duckdb JSON
+        except (ValueError, TypeError, json.JSONDecodeError):
+            continue
+        return result
+
+    msg = f"Value {value} cannot be casted to any Python types."
+    raise RuntimeError(msg)
 
 
 @dataclass
@@ -489,13 +520,7 @@ class DuckDBTable:
                 ):  # when datetime is read from table but declared type can be datetime | None
                     result[column] = value
                 case (_, types.UnionType()):  # case: type_ is types.UnionType
-                    castable_types = filterfalse(lambda x: x is types.NoneType, get_args(column_types[column]))
-                    try:
-                        casted_value = next(castable_types)(value)
-                    except StopIteration as e:
-                        msg = f"Value {value} in column {column} cannot be casted to any Python types."
-                        raise RuntimeError(msg) from e
-                    result[column] = casted_value
+                    result[column] = cast_union_types(get_args(column_types[column]), value)
                 case (v, t) if isinstance(v, t):  # case: value is of type type_,
                     result[column] = v
                 case (v, t):  # always true; bind value and type to v, t to re-use in expression

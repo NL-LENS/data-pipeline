@@ -208,6 +208,7 @@ def build(
     For the reference period, start_year and end_year are both included.
     Within the datasets matched by source_regex,
     only the highest version within source_path and ref_period is used.
+    Files without read permission are ignored.
 
     This function is currently experimental. For instance, datasets
     with missing reference period are ignored.
@@ -228,6 +229,7 @@ def build(
            WHERE
               source_filename like ?
               AND ref_period BETWEEN ? AND ?
+              AND read_access
            QUALIFY
               row_number() OVER (
                   PARTITION BY source_path, ref_period ORDER BY version DESC

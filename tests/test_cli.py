@@ -60,10 +60,12 @@ def test_cli_build(monkeypatch: pytest.MonkeyPatch):
             "SPOLIS",
             "--dest_dir",
             "path/to/processed/data",
+            "--chunk_size",
+            "500_000",
         ],
     )
     with patch("data_pipeline.cli.build_bronze") as build_bronze_patch:
         data_pipeline.cli.cli_main()
         build_bronze_patch.assert_called_once_with(
-            Path("/path/to/db.db"), "SPOLIS", 2020, 2021, Path("path/to/processed/data")
+            Path("/path/to/db.db"), "SPOLIS", 2020, 2021, Path("path/to/processed/data"), 500_000
         )

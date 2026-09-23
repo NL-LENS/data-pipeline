@@ -290,7 +290,7 @@ class TestBuild(TestBase):
     def test_build(self, mock_ingest_source: mock.Mock, db_file: Path, tmp_path: Path):
         """Test bronze build."""
         dest_dir = tmp_path / "processed"
-        build(db_file, "SPOLIS", 2020, 2021, dest_dir)
+        build(db_file, "SPOLIS", 2020, 2021, dest_dir, None)
 
         expected_calls = 2
         assert mock_ingest_source.call_count == expected_calls, "Ingest source not called as expected."

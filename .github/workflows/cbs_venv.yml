@@ -10,8 +10,8 @@ on:
 
 jobs:
 
-  build:
-    name: Build for Windows-latest
+  test_with_base_venv:
+    name: Install and run tests in CBS-like environment
     runs-on: windows-latest
     strategy:
       fail-fast: true
@@ -41,8 +41,7 @@ jobs:
         run: |
           python -m venv --system-site-packages .venv
           source .venv/Scripts/activate
-          python -m pip install .[dev] --no-build-isolation
+          python -m pip install --no-index pytest
+          python -m pip install --no-index --no-build-isolation .
       - name: Run unit tests
         run: .venv/Scripts/python -m pytest -v
-      - name: Verify that we can build the package
-        run: .venv/Scripts/python -m build

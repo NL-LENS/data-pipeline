@@ -48,7 +48,7 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
         with:
-          python-version: 3.12
+          python-version: '3.13'
           cache: 'pip'
       - name: Python info
         shell: bash -e {0}
@@ -71,7 +71,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           cache: 'pip'
-          python-version: '3.12'
+          python-version: '3.13'
           extras: 'dev'
       - name: Clean up space
         run: |

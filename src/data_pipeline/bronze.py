@@ -174,7 +174,7 @@ def ingest_source(
     logger.info("Done.")
 
 
-# ruff: disable[PLR0913]
+# ruff: disable[PLR0913, PLR0917]
 def build(
     db_file: Path,
     source_regex: str,
@@ -252,4 +252,4 @@ def build(
         ingest_source(source_manifest, Path(source_path), Path(source_filename), dest_filename, chunk_size)
 
 
-# ruff: enable[PLR0913]
+# ruff: enable[PLR0913, PLR0917]

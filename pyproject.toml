@@ -44,7 +44,7 @@ dev = [
     "coverage [toml]",
     "pytest",
     "pytest-cov",
-    "ruff",
+    "ruff>=0.16", # >=0.15 for https://astral.sh/blog/ruff-v0.15.0#introducing-linter-block-suppressions
     "sphinx",
     "sphinx_rtd_theme",
     "sphinx-autoapi",

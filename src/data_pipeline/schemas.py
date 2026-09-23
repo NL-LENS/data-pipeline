@@ -102,9 +102,13 @@ class SavColumnMeta(DuckDBRecord):
         For numeric variables, this contains the values indicating missingness.
     """
 
-    source_path: Path = field(metadata={"foreign_key": {"table": "source_manifest", "column": "source_path"}})
-    source_filename: Path = field(metadata={"foreign_key": {"table": "source_manifest", "column": "source_filename"}})
-    variable: str
+    source_path: Path = field(
+        metadata={"primary_key": True, "foreign_key": {"table": "source_manifest", "column": "source_path"}}
+    )
+    source_filename: Path = field(
+        metadata={"primary_key": True, "foreign_key": {"table": "source_manifest", "column": "source_filename"}}
+    )
+    variable: str = field(metadata={"primary_key": True})
     original_variable: str
     readstat_type: str
     description: str | None

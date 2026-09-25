@@ -8,6 +8,7 @@ from pathlib import Path
 import duckdb
 import pyarrow.parquet as pq
 import pyreadstat
+from tqdm import tqdm
 from data_pipeline.metadata import get_file_stats
 from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SavColumnMeta
@@ -15,7 +16,7 @@ from data_pipeline.schemas import SavMetaTable
 from data_pipeline.schemas import SourceManifest
 from data_pipeline.utils import quote_identifier
 
-DEFAULT_CHUNKSIZE = 100_000
+DEFAULT_CHUNKSIZE = 1_000_000
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ def parse_sav_meta(source_path: Path, source_filename: Path | str) -> Sequence[S
             readstat_type=readstat_type,
             description=meta.column_names_to_labels.get(var_name),
             value_labels=meta.variable_value_labels.get(var_name),
+            variable_measure=meta.variable_measure.get(var_name)
         )
         sav_metadata.append(record)
 
@@ -91,10 +93,8 @@ def stream_to_bronze(
     sample_table.columns = [col.upper() for col in sample_table.columns]
     parquet_schema = sample_table.to_arrow().schema
 
-    offset = 0
-
     with pq.ParquetWriter(dest_file, parquet_schema) as writer:
-        while offset < total_rows:
+        for offset in tqdm(range(0, total_rows, chunk_size), unit="chunk", desc=Path(source_file).name):
             chunk, _ = pyreadstat.read_sav(
                 source_file,
                 row_offset=offset,
@@ -104,7 +104,6 @@ def stream_to_bronze(
             chunk.columns = [col.upper() for col in chunk.columns]
             table = chunk.to_arrow()
             writer.write_table(table)
-            offset += chunk_size
 
 
 def write_column_metadata_to_db(db_file: Path | str, source_path: Path, source_filename: Path | str) -> None:

@@ -20,7 +20,11 @@ def cli_main() -> None:
     init_parser.add_argument("--root", type=Path, help="Data root directory.")
     init_parser.add_argument("--db_file", type=Path, help="Path to the database file to be created.")
     init_parser.add_argument(
-        "--exclude_dir", nargs="*", help="Exclude directories whose names contain any of the provided strings here."
+        "--exclude_dir",
+        nargs="*",
+        default=["geconverteerde data"],
+        help="Exclude directories whose names contain any of the provided strings here. "
+        "Matching ignores case. Pass --exclude_dir with no values to traverse everything.",
     )
 
     build_parser = subparsers.add_parser("build")

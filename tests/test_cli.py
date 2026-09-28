@@ -27,10 +27,11 @@ def test_cli_can_be_called(lens_command: list[str], monkeypatch: pytest.MonkeyPa
 @pytest.mark.parametrize(
     ("exclude_dir", "expected_arg"),
     [
-        ([], None),
+        ([], ["geconverteerde data"]),
+        (["--exclude_dir"], []),
         (["--exclude_dir", "string1", "string2"], ["string1", "string2"]),
     ],
-    ids=["no_exclude_dir", "two_exclude_dir"],
+    ids=["default_exclude_dir", "empty_exclude_dir", "two_exclude_dir"],
 )
 def test_cli_init(exclude_dir: list, expected_arg: list | None, monkeypatch: pytest.MonkeyPatch):
     """Test that init calls run_init."""
@@ -69,3 +70,4 @@ def test_cli_build(monkeypatch: pytest.MonkeyPatch):
         build_bronze_patch.assert_called_once_with(
             Path("/path/to/db.db"), "SPOLIS", 2020, 2021, Path("path/to/processed/data"), 500_000
         )
+

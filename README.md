@@ -30,6 +30,49 @@ is not part of the database, but stored in parquet files.
  datasets in a registry data project, and provides information relevant for
  data processing at various stages.
 
+#### The metadata database
+
+The database holds two tables. They differ in what a single row represents.
+
+##### `source_manifest` -- one row per source file
+
+Written by `lens init`, which walks `--root` and records every `.sav` file it
+finds. Later filled in further by `lens build bronze` as files get ingested.
+
+| Column | Meaning |
+| --- | --- |
+| `source_path` | Directory holding the file. Part of the primary key. |
+| `source_filename` | File name including suffix. Part of the primary key. |
+| `read_access` | Whether the account running `init` could actually open the file. |
+| `last_modified` | File modification time, UTC. |
+| `file_size` | Size in MB. |
+| `ref_period` | Reference period parsed from the file name, e.g. `INPA2017V3.sav` -> 2017-01-01. `NULL` when the name does not match the pattern. |
+| `version` | Version number parsed from the file name, e.g. `INPA2017V3.sav` -> 3. |
+| `bronze_path` | Path to the parquet file. `NULL` until ingested. |
+| `schema_hash` | Reserved, currently always `NULL`. |
+| `ingested_at` | When the file was converted to parquet. `NULL` until ingested. |
+
+The `NULL`-until-ingested columns are how you tell which files are merely
+*known* from those that have been *processed*.
+
+##### `sav_meta` -- one row per column in a source file
+
+Written by `lens build bronze` while ingesting a file. This is where the SPSS
+column semantics live, since parquet cannot carry them.
+
+| Column | Meaning |
+| --- | --- |
+| `source_path`, `source_filename` | Which file this column came from; foreign key into `source_manifest`. |
+| `variable` | Upper-cased name, as written in the parquet file. |
+| `original_variable` | Name as it appears in the `.sav` file. |
+| `readstat_type` | Column type reported by pyreadstat, e.g. `double`, `string`. |
+| `variable_measure` | SPSS measurement level: `nominal`, `ordinal`, `scale` or `unknown`. |
+| `description` | The SPSS variable label. |
+| `value_labels` | JSON map of value -> meaning. For categoricals, the category names; for numerics, typically the codes marking missingness. |
+
+Actual data is never stored in the database -- only in the parquet files that
+`bronze_path` points to.
+
 
 ## Development setup
 

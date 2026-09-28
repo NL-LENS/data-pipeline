@@ -159,9 +159,11 @@ class TestBronze(TestBase):
             pl.when(pl.col("wage").is_in(np.arange(100, 111))).then(None).otherwise(pl.col("wage")).alias("wage"),
         )
 
+    @pytest.mark.parametrize("offset_workaround", [False, True])
     def test_stream_to_bronze(
         self,
-        sav_test_data: tuple[pl.DataFrame, Path],
+        sav_test_data: pl.DataFrame,
+        offset_workaround: bool,
         sav_file: Path,
         tmp_path: Path,
     ) -> None:
@@ -173,7 +175,9 @@ class TestBronze(TestBase):
         expected_data = expected_data.with_columns(pl.lit(None).alias("null_col"))
         expected_data.columns = [col.upper() for col in expected_data.columns]
         file_path_out = tmp_path / self.file_out
-        stream_to_bronze(sav_file, file_path_out, chunk_size=9_999)
+        stream_to_bronze(
+            sav_file, file_path_out, chunk_size=9_999, num_processes=2, offset_workaround=offset_workaround
+        )
 
         result = pl.read_parquet(file_path_out)
         (
@@ -243,7 +247,9 @@ class TestBronze(TestBase):
         assert file_meta_record.version is None, "version modified when it should not."
         assert file_meta_record.ref_period is None, "ref period modified when it should not."
 
-        mock_stream_to_bronze.assert_called_once_with(tmp_path / self.file_in, dest_file, DEFAULT_CHUNKSIZE)
+        mock_stream_to_bronze.assert_called_once_with(
+            tmp_path / self.file_in, dest_file, DEFAULT_CHUNKSIZE, benchmark=False, offset_workaround=False
+        )
         mock_write_column_metadata_to_db.assert_called_once_with(db_file, tmp_path, self.file_in)
 
 
@@ -294,3 +300,5 @@ class TestBuild(TestBase):
 
         expected_calls = 2
         assert mock_ingest_source.call_count == expected_calls, "Ingest source not called as expected."
+        for call in mock_ingest_source.call_args_list:
+            assert call.kwargs == {"benchmark": False, "offset_workaround": False}

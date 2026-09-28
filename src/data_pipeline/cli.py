@@ -32,6 +32,12 @@ def cli_main() -> None:
     )
     build_parser.add_argument("--dest_dir", type=Path, help="Path to the processed bronze data.")
     build_parser.add_argument("--chunk_size", type=int, help="Number of rows to process per chunk.", default=None)
+    build_parser.add_argument(
+        "--benchmark", action="store_true", help="Time a 10% sample without marking it as ingested."
+    )
+    build_parser.add_argument(
+        "--offset_workaround", action="store_true", help="Use explicit row offsets when reading SAV files."
+    )
 
     all_subparsers = [init_parser, build_parser]
     for p in all_subparsers:
@@ -51,6 +57,15 @@ def cli_main() -> None:
             if args.color == "bronze":
                 start_year = int(min(args.ref_period))
                 end_year = int(max(args.ref_period))
-                build_bronze(args.db_file, args.source_regex, start_year, end_year, args.dest_dir, args.chunk_size)
+                build_bronze(
+                    args.db_file,
+                    args.source_regex,
+                    start_year,
+                    end_year,
+                    args.dest_dir,
+                    args.chunk_size,
+                    benchmark=args.benchmark,
+                    offset_workaround=args.offset_workaround,
+                )
             else:
                 raise NotImplementedError

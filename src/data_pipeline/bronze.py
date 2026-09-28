@@ -1,11 +1,16 @@
 """Read files, store metadata and save as Parquet."""
 
 import logging
+import os
+from collections.abc import Generator
 from collections.abc import Sequence
 from datetime import UTC
 from datetime import datetime
+from functools import partial
 from pathlib import Path
+from time import perf_counter
 import duckdb
+import polars as pl
 import pyarrow.parquet as pq
 import pyreadstat
 from data_pipeline.metadata import get_file_stats
@@ -15,7 +20,7 @@ from data_pipeline.schemas import SavMetaTable
 from data_pipeline.schemas import SourceManifest
 from data_pipeline.utils import quote_identifier
 
-DEFAULT_CHUNKSIZE = 100_000
+DEFAULT_CHUNKSIZE = 500_000
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +67,67 @@ def parse_sav_meta(source_path: Path, source_filename: Path | str) -> Sequence[S
     return sav_metadata
 
 
-def stream_to_bronze(
+def iter_sav_chunks(
+    source_file: Path | str,
+    chunk_size: int = DEFAULT_CHUNKSIZE,
+    num_processes: int | None = None,
+    offset_workaround: bool = False,
+) -> Generator[pl.DataFrame, None, None]:
+    """Yield SAV data as Polars chunks using multiprocessing.
+
+    With ``offset_workaround=True``, read explicit row offsets instead of
+    ``read_file_in_chunks``. The built-in chunk reader receives a partially
+    configured SAV reader so its internal metadata read also uses Polars.
+    """
+    if chunk_size < 1:
+        msg = "chunk_size must be positive"
+        raise ValueError(msg)
+    if num_processes is None:
+        num_processes = max(1, (os.cpu_count() or 1) - 1)
+    if num_processes < 1:
+        msg = "num_processes must be positive"
+        raise ValueError(msg)
+
+    if offset_workaround:
+        total_rows = read_sav_meta(source_file).number_rows or 0
+        offset = 0
+        while offset < total_rows:
+            chunk, _ = pyreadstat.read_file_multiprocessing(
+                pyreadstat.read_sav,
+                source_file,
+                row_offset=offset,
+                row_limit=min(chunk_size, total_rows - offset),
+                num_processes=num_processes,
+                output_format="polars",
+            )
+            if len(chunk) == 0:
+                msg = f"SAV reader returned no rows at offset {offset}, expected {total_rows} rows"
+                raise RuntimeError(msg)
+            yield chunk
+            offset += len(chunk)
+        return
+
+    reader = pyreadstat.read_file_in_chunks(
+        partial(pyreadstat.read_sav, output_format="polars"),
+        source_file,
+        chunksize=chunk_size,
+        multiprocess=True,
+        num_processes=num_processes,
+        output_format="polars",
+    )
+    for chunk, _ in reader:
+        yield chunk
+
+
+def stream_to_bronze(  # noqa: PLR0913, PLR0915
     source_file: Path | str,
     dest_file: Path | str,
     chunk_size: int,
+    num_processes: int | None = None,
+    benchmark: bool = False,
+    offset_workaround: bool = False,
 ) -> None:
-    """Stream a source .sav file to bronze Parquet.
+    """Stream a source SAV file to bronze Parquet.
 
     Parameters
     ----------
@@ -77,34 +137,72 @@ def stream_to_bronze(
         Path to the output Parquet file.
     chunk_size : int
         Number of rows to read per chunk.
+    num_processes : int or None
+        Number of worker processes. Defaults to visible CPUs minus one.
+    benchmark : bool
+        Process at least 10% and write it to a separate benchmark file.
+    offset_workaround : bool
+        Read chunks using explicit row offsets.
     """
-    # NOTE: uses a work-around with a while loop + offsets + row_limit
-    # instead of pyreadstat.read_file_in_chunks.
-    # Reason: the latter passes pyreadstat.read_sav with output_format=`pandas`
-    # for reading metadata, but leading to an implicit pandas runtime
-    # dependency.
+    if chunk_size < 1:
+        msg = "chunk_size must be positive"
+        raise ValueError(msg)
+    if num_processes is None:
+        num_processes = max(1, (os.cpu_count() or 1) - 1)
+    if num_processes < 1:
+        msg = "num_processes must be positive"
+        raise ValueError(msg)
+
     meta = read_sav_meta(source_file)
     total_rows = meta.number_rows or 0
+    if benchmark:
+        dest_file = Path(dest_file)
+        dest_file = dest_file.with_name(f"{dest_file.stem}.benchmark{dest_file.suffix}")
 
-    # Read sample table for the schema; convert to upper
+    print(f"CPUs visible: {os.cpu_count()}")  # noqa: T201
+    print(f"Processes used: {num_processes}")  # noqa: T201
+    print(f"Chunk size: {chunk_size}")  # noqa: T201
+    print(f"Offset workaround: {offset_workaround}")  # noqa: T201
+    if benchmark:
+        print("Benchmarking processing time for 10% data.")  # noqa: T201
+
     sample_table, _ = pyreadstat.read_sav(source_file, output_format="polars", row_limit=1000)
     sample_table.columns = [col.upper() for col in sample_table.columns]
     parquet_schema = sample_table.to_arrow().schema
+    reader = iter_sav_chunks(source_file, chunk_size, num_processes, offset_workaround)
+    total_start = perf_counter()
+    rows_written = 0
+    chunk_number = 0
+    try:
+        with pq.ParquetWriter(dest_file, parquet_schema) as writer:
+            while not benchmark or rows_written < total_rows * 0.10:
+                read_start = perf_counter()
+                try:
+                    chunk = next(reader)
+                except StopIteration:
+                    break
+                read_elapsed = perf_counter() - read_start
+                write_start = perf_counter()
+                chunk.columns = [col.upper() for col in chunk.columns]
+                writer.write_table(chunk.to_arrow())
+                write_elapsed = perf_counter() - write_start
+                rows_written += len(chunk)
+                chunk_number += 1
+                progress = rows_written / total_rows if total_rows else 0
+                print(  # noqa: T201
+                    f"Chunk {chunk_number:3d} | {len(chunk):,} rows | "
+                    f"read {read_elapsed:7.2f}s | write {write_elapsed:6.2f}s | "
+                    f"{rows_written:,}/{total_rows:,} ({progress:.1%})"
+                )
+    finally:
+        reader.close()
 
-    offset = 0
-
-    with pq.ParquetWriter(dest_file, parquet_schema) as writer:
-        while offset < total_rows:
-            chunk, _ = pyreadstat.read_sav(
-                source_file,
-                row_offset=offset,
-                row_limit=chunk_size,
-                output_format="polars",
-            )
-            chunk.columns = [col.upper() for col in chunk.columns]
-            table = chunk.to_arrow()
-            writer.write_table(table)
-            offset += chunk_size
+    total_elapsed = perf_counter() - total_start
+    print(f"\nFinished {rows_written:,} rows")  # noqa: T201
+    print(f"Total time: {total_elapsed:.2f}s")  # noqa: T201
+    print(f"Total time: {total_elapsed / 60:.2f} min")  # noqa: T201
+    if total_elapsed > 0 and benchmark:
+        print(f"Average throughput: {rows_written / total_elapsed:,.0f} rows/s")  # noqa: T201
 
 
 def write_column_metadata_to_db(db_file: Path | str, source_path: Path, source_filename: Path | str) -> None:
@@ -116,12 +214,14 @@ def write_column_metadata_to_db(db_file: Path | str, source_path: Path, source_f
     table.insert_many(sav_column_meta)
 
 
-def ingest_source(
+def ingest_source(  # noqa: PLR0913
     source_manifest: SourceManifest,
     source_path: Path,
     source_filename: Path,
     dest_file: Path | str,
     chunk_size: int | None = None,
+    benchmark: bool = False,
+    offset_workaround: bool = False,
 ) -> None:
     """Ingest a source file from raw to bronze.
 
@@ -142,6 +242,10 @@ def ingest_source(
         The full path to the .parquet file to write.
     chunk_size:
         Number of rows to process in one chunk.
+    benchmark:
+        Write a benchmark sample without updating ingestion metadata.
+    offset_workaround:
+        Read chunks using explicit row offsets.
 
     Raises
     ------
@@ -155,7 +259,15 @@ def ingest_source(
 
     full_path_to_sav_file = source_path / source_filename
     chunk_size = chunk_size or DEFAULT_CHUNKSIZE
-    stream_to_bronze(full_path_to_sav_file, dest_file, chunk_size)
+    stream_to_bronze(
+        full_path_to_sav_file,
+        dest_file,
+        chunk_size,
+        benchmark=benchmark,
+        offset_workaround=offset_workaround,
+    )
+    if benchmark:
+        return
 
     # Update file metadata
     last_modified, file_size_mb = get_file_stats(full_path_to_sav_file)
@@ -181,7 +293,9 @@ def build(
     start_year: int,
     end_year: int,
     dest_dir: Path,
-    chunk_size: int | None,
+    chunk_size: int | None = None,
+    benchmark: bool = False,
+    offset_workaround: bool = False,
 ) -> None:
     """Build a set of bronze datasets.
 
@@ -202,6 +316,10 @@ def build(
         all parents.
     chunk_size:
         Number of rows to process per chunk.
+    benchmark:
+        Process a sample into a separate benchmark file.
+    offset_workaround:
+        Read chunks using explicit row offsets.
 
     Notes
     -----
@@ -249,7 +367,15 @@ def build(
     dest_dir.mkdir(exist_ok=True, parents=True)
     for source_path, source_filename in datasets_to_process:
         dest_filename = dest_dir / Path(source_filename).with_suffix(".parquet").name
-        ingest_source(source_manifest, Path(source_path), Path(source_filename), dest_filename, chunk_size)
+        ingest_source(
+            source_manifest,
+            Path(source_path),
+            Path(source_filename),
+            dest_filename,
+            chunk_size,
+            benchmark=benchmark,
+            offset_workaround=offset_workaround,
+        )
 
 
 # ruff: enable[PLR0913, PLR0917]

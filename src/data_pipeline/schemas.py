@@ -24,6 +24,13 @@ class SavMetaTable(DuckDBTable):
 
 
 @dataclass
+class SilverMetaTable(DuckDBTable):
+    """Table for silver metadata."""
+
+    table_name = "silver_meta"
+
+
+@dataclass
 class FileMetaRecord(DuckDBRecord):
     """Define the schema for file metadata records.
 
@@ -113,3 +120,28 @@ class SavColumnMeta(DuckDBRecord):
     readstat_type: str
     description: str | None
     value_labels: dict | None = None  # TODO: may consider alternative to dict/json at some point
+
+
+@dataclass
+class SilverMetaRecord(DuckDBRecord):
+    """Container for metadata of a single silver file.
+
+    Arguments
+    ---------
+    TODO
+    """
+
+    silver_path: Path = field(metadata={"primary_key": True})
+    file_name: Path = field(metadata={"primary_key": True})
+    # TODO: FK needs to refer to a column with a UNIQUE constraint
+    bronze_path: Path  # = field(metadata={"foreign_key": {"table": "source_manifest", "column": "bronze_path"}})
+    last_modified: datetime
+    bronze_id_col: str
+    bronze_event_time_col: str
+    bronze_cols_dropped: list[str]
+
+
+# how to deal with years? some files may be yearly, others not? - partition by
+# 'id' and start at 0; add as more files are added; rely on timestamp column
+# to know the year/filter
+# ie, the filename *does not* contain any time information??

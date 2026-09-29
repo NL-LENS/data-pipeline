@@ -16,9 +16,33 @@ from data_pipeline.silver import SilverConfig
 from data_pipeline.silver import convert_to_silver
 from .conftest import TestData
 
+config_with_existing_time_col = SilverConfig(
+    rinpersoon_col="RINPERSOON",
+    rinpersoons_col="RINPERSOONS",
+    time_cols=["TIME1", "TIME2"],
+    id_cols=["RINPERSOON", "IRRELEVANT_ID"],
+    event_time_col="TIME1",
+)
+config_without_existing_time_col = SilverConfig(
+    rinpersoon_col="RINPERSOON",
+    rinpersoons_col="RINPERSOONS",
+    time_cols=[],  # TODO: work also with declard time col (but event_time_col = None?)
+    id_cols=["RINPERSOON", "IRRELEVANT_ID"],
+    event_time_col=None,
+    event_time_col_fmt=None,
+    apply_event_time="01-01",
+)
 
+
+@pytest.mark.parametrize(
+    "config",
+    [(config_with_existing_time_col), (config_without_existing_time_col)],
+    ids=["use_existing_time_col", "make_new_time_col"],
+)
 class TestSilver(TestData):
     """Class for testing bronze->silver conversion."""
+
+    bronze_ref_year: int = 2024
 
     @pytest.fixture
     def input_paths(self, tmp_path: Path) -> dict[str, Path]:
@@ -29,9 +53,17 @@ class TestSilver(TestData):
             "bronze_file": tmp_path / "bronze.parquet",
         }
 
-    @pytest.fixture
-    def bronze_data(self, input_paths: dict[str, Path]) -> None:
-        """Bronze data used is input for silver."""
+    def create_bronze_data(self, input_paths: dict[str, Path], config: SilverConfig) -> None:
+        """Bronze data used is input for silver.
+
+        Arguments
+        ---------
+        input_paths:
+            Input paths for bronze data; normally the `input_paths` fixture.
+        config:
+            Silver config with information whether the user defines a event time
+            column or whether it's taken from the bronze data.
+        """
         self.validity_mask = np.bool(np.ones(self.sample_size))
 
         """Create .parquet of bronze."""
@@ -39,8 +71,6 @@ class TestSilver(TestData):
             "RINPERSOON": self.make_identifiers(),
             "RINPERSOONS": self.make_categorical(["R"], [1]),
             "IRRELEVANT_ID": self.make_identifiers(),
-            "TIME1": self.random_dates().astype(str),
-            "TIME2": self.random_dates().astype(str),
             "CONTINUOUS_ATTR1": self.rng.random(size=self.sample_size).astype(np.float64),
             "CONTINUOUS_ATTR2": self.rng.random(size=self.sample_size).astype(np.float64),
             "CAT_ATTR1": self.make_categorical(["a", "b", "c", "missing"], [0.1, 0.6, 0.2, 0.1]),
@@ -58,12 +88,19 @@ class TestSilver(TestData):
             x=data_dict["CONTINUOUS_ATTR2"], inject=np.float64(99997), size=int(0.02 * self.sample_size)
         )
 
-        data_dict["TIME1"] = self.corrupt(
-            x=data_dict["TIME1"], inject="--------", size=int(0.02 * self.sample_size), valid=False
-        )
         data_dict["RINPERSOONS"] = self.corrupt(
             x=data_dict["RINPERSOONS"], inject="not_R", size=int(0.05 * self.sample_size), valid=False
         )
+
+        if config.event_time_col:
+            data_dict |= {
+                "TIME1": self.random_dates().astype(str),
+                "TIME2": self.random_dates().astype(str),
+            }
+
+            data_dict["TIME1"] = self.corrupt(
+                x=data_dict["TIME1"], inject="--------", size=int(0.02 * self.sample_size), valid=False
+            )
 
         data = pl.DataFrame(data_dict)
         data.write_parquet(input_paths["bronze_file"])
@@ -80,7 +117,7 @@ class TestSilver(TestData):
             read_access=True,
             last_modified=datetime(2025, 4, 25, tzinfo=UTC),
             file_size=1_000,
-            ref_period=datetime(2024, 1, 1, tzinfo=UTC),
+            ref_period=datetime(self.bronze_ref_year, 1, 1, tzinfo=UTC),
             version=None,
             bronze_path=input_paths["bronze_file"],
         )
@@ -204,32 +241,10 @@ class TestSilver(TestData):
         ]
         table.insert_many(column_list)
 
-    config_with_existing_time_col = SilverConfig(
-        rinpersoon_col="RINPERSOON",
-        rinpersoons_col="RINPERSOONS",
-        time_cols=["TIME1", "TIME2"],
-        id_cols=["RINPERSOON", "IRRELEVANT_ID"],
-        event_time_col="TIME1",
-    )
-    config_without_existing_time_col = SilverConfig(
-        rinpersoon_col="RINPERSOON",
-        rinpersoons_col="RINPERSOONS",
-        time_cols=["TIME1", "TIME2"],  # TODO: should we also support/test time_cols=[]?
-        id_cols=["RINPERSOON", "IRRELEVANT_ID"],
-        event_time_col=None,
-        event_time_col_fmt=None,
-        apply_event_time="01-01",
-    )
-
     @pytest.mark.usefixtures("metadata_db")
-    @pytest.mark.usefixtures("bronze_data")
-    @pytest.mark.parametrize(
-        "config",
-        [(config_with_existing_time_col), (config_without_existing_time_col)],
-        ids=["use_existing_time_col", "make_new_time_col"],
-    )
     def test_silver(self, db_file: Path, input_paths: dict[str, Path], tmp_path: Path, config: SilverConfig):
         """Test conversion of bronze to silver."""
+        self.create_bronze_data(input_paths, config)
         dest_path = tmp_path / "silver.parquet"
 
         source_manifest = SourceManifest(db_file)
@@ -246,12 +261,16 @@ class TestSilver(TestData):
         con = duckdb.connect()
 
         silver_df = (
-            pl.read_parquet(input_paths["bronze_file"])
-            .filter(self.validity_mask == 1)
-            .cast({"RINPERSOON": pl.Int64})
-            .with_columns(pl.col("TIME1").str.to_date().alias(TIME_COLNAME))
-            .sort(by=["RINPERSOON", TIME_COLNAME])
+            pl.read_parquet(input_paths["bronze_file"]).filter(self.validity_mask == 1).cast({"RINPERSOON": pl.Int64})
         )
+
+        if config.event_time_col:
+            silver_df = silver_df.with_columns(pl.col("TIME1").str.to_date().alias(TIME_COLNAME))
+        else:
+            year_col = f"{self.bronze_ref_year}-{config.apply_event_time}"
+            silver_df = silver_df.with_columns(pl.lit(year_col).str.to_date().alias(TIME_COLNAME))
+
+        silver_df = silver_df.sort(by=["RINPERSOON", TIME_COLNAME])
 
         rel = con.read_parquet(dest_path)
 

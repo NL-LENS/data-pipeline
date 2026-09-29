@@ -52,6 +52,7 @@ from typing import ClassVar
 from typing import NewType
 from typing import Self
 from typing import get_args
+from typing import get_origin
 import duckdb
 from data_pipeline.utils import is_optional
 from data_pipeline.utils import is_union
@@ -249,6 +250,7 @@ class DuckDBRecord:
             Path: "VARCHAR",
             DuckDBBigInt: "BIGINT",
             DuckDBDouble: "DOUBLE",
+            list: "LIST",
         }
     )
     DICT_KEY_FOR_PK: ClassVar[str] = "primary_key"
@@ -271,12 +273,13 @@ class DuckDBRecord:
         fields_ = [f for f in fields(self) if not is_union(f.type) and not is_optional(f.type)]
         for field_ in fields_:
             py_type = field_.type
+            origin = get_origin(py_type) or py_type
 
-            if py_type not in self.TYPE_MAP:
+            if origin not in self.TYPE_MAP:
                 msg = f"Declared type {py_type} for field {field_.name} has no corresponding type in DuckDB."
                 raise TypeError(msg)
 
-            mapping[field_.name] = self.TYPE_MAP[py_type]
+            mapping[field_.name] = self.TYPE_MAP[origin]
         return mapping
 
     def _map_union_types(self) -> dict[str, str]:

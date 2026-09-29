@@ -80,7 +80,7 @@ class TestSilver(TestData):
             read_access=True,
             last_modified=datetime(2025, 4, 25, tzinfo=UTC),
             file_size=1_000,
-            ref_period=None,
+            ref_period=datetime(2024, 1, 1, tzinfo=UTC),
             version=None,
             bronze_path=input_paths["bronze_file"],
         )
@@ -204,19 +204,33 @@ class TestSilver(TestData):
         ]
         table.insert_many(column_list)
 
+    config_with_existing_time_col = SilverConfig(
+        rinpersoon_col="RINPERSOON",
+        rinpersoons_col="RINPERSOONS",
+        time_cols=["TIME1", "TIME2"],
+        id_cols=["RINPERSOON", "IRRELEVANT_ID"],
+        event_time_col="TIME1",
+    )
+    config_without_existing_time_col = SilverConfig(
+        rinpersoon_col="RINPERSOON",
+        rinpersoons_col="RINPERSOONS",
+        time_cols=["TIME1", "TIME2"],  # TODO: should we also support/test time_cols=[]?
+        id_cols=["RINPERSOON", "IRRELEVANT_ID"],
+        event_time_col=None,
+        event_time_col_fmt=None,
+        apply_event_time="01-01",
+    )
+
     @pytest.mark.usefixtures("metadata_db")
     @pytest.mark.usefixtures("bronze_data")
-    def test_silver(self, db_file: Path, input_paths: dict[str, Path], tmp_path: Path):
+    @pytest.mark.parametrize(
+        "config",
+        [(config_with_existing_time_col), (config_without_existing_time_col)],
+        ids=["use_existing_time_col", "make_new_time_col"],
+    )
+    def test_silver(self, db_file: Path, input_paths: dict[str, Path], tmp_path: Path, config: SilverConfig):
         """Test conversion of bronze to silver."""
         dest_path = tmp_path / "silver.parquet"
-
-        config = SilverConfig(
-            rinpersoon_col="RINPERSOON",
-            rinpersoons_col="RINPERSOONS",
-            time_cols=["TIME1", "TIME2"],
-            id_cols=["RINPERSOON", "IRRELEVANT_ID"],
-            event_time_col="TIME1",
-        )
 
         source_manifest = SourceManifest(db_file)
 
@@ -231,7 +245,7 @@ class TestSilver(TestData):
 
         con = duckdb.connect()
 
-        bronze_df = (
+        silver_df = (
             pl.read_parquet(input_paths["bronze_file"])
             .filter(self.validity_mask == 1)
             .cast({"RINPERSOON": pl.Int64})
@@ -248,10 +262,10 @@ class TestSilver(TestData):
         col_types = [t.id for t in rel.types]
         assert col_types == expected_types, "Wrong column types"
 
-        assert bronze_df.shape[0] == rel.shape[0], "Wrong number of rows"
+        assert silver_df.shape[0] == rel.shape[0], "Wrong number of rows"
 
         (
-            pl.testing.assert_frame_equal(bronze_df.select(TIME_COLNAME), rel.select(TIME_COLNAME).pl()),
+            pl.testing.assert_frame_equal(silver_df.select(TIME_COLNAME), rel.select(TIME_COLNAME).pl()),
             "Rows out of order",
         )
 

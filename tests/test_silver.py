@@ -249,7 +249,7 @@ class TestSilver(TestData):
 
         source_manifest = SourceManifest(db_file)
 
-        convert_to_silver(
+        _ = convert_to_silver(
             source_manifest=source_manifest,
             source_path=input_paths["source_path"],
             source_filename=input_paths["source_filename"],

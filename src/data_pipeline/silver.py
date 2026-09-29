@@ -1,11 +1,15 @@
 import logging
 from dataclasses import dataclass
+from datetime import UTC
+from datetime import datetime
 from itertools import filterfalse
 from pathlib import Path
 import duckdb
+from _duckdb import DuckDBPyRelation
 from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SavColumnMeta
 from data_pipeline.schemas import SavMetaTable
+from data_pipeline.schemas import SilverMetaRecord
 from data_pipeline.schemas import SourceManifest
 
 logger = logging.getLogger(__name__)
@@ -64,17 +68,17 @@ class SilverConfig:
     time_cols: list[str]
     id_cols: list[str]
     event_time_col: str | None
-    event_time_col_fmt: None | str = "%Y-%m-%d"
+    event_time_col_fmt: str | None = "%Y-%m-%d"
     apply_event_time: str | None = None
 
     @property
-    def cols_to_drop(self) -> str:
+    def cols_to_drop(self) -> list[str]:
         """Columns to drop from the table."""
         drop_cols: list[str] = []
         drop_cols += filterfalse(lambda x: x == self.event_time_col, self.time_cols)
         drop_cols += filterfalse(lambda x: x == self.rinpersoon_col, self.id_cols)
         drop_cols += [self.rinpersoons_col]
-        return ",".join(drop_cols)
+        return drop_cols
 
     @property
     def event_idx_columns(self) -> list[str | None]:
@@ -83,10 +87,145 @@ class SilverConfig:
             return [self.rinpersoon_col, self.event_time_col]
         return [self.rinpersoon_col, TIME_COLNAME]
 
+    @property
+    def has_event_col(self) -> bool:
+        """Return True if event_time_col is defined."""
+        return self.event_time_col is not None
+
+
+def define_event_time_col(rel: DuckDBPyRelation, config: SilverConfig, file_record: FileMetaRecord) -> DuckDBPyRelation:
+    """Define the event-time column of data in a relation."""
+    if config.has_event_col:
+        rel = rel.select(f"""* EXCLUDE({config.event_time_col}),
+                         try_strptime({config.event_time_col}, '{config.event_time_col_fmt}')::DATE
+                         AS {config.event_time_col}""")
+        rel = rel.filter(f"{config.event_time_col} IS NOT NULL")
+    else:
+        # TODO: task for config validation
+        year = file_record.ref_period.year  # type: ignore[union-attr]
+        year_col = f"{year}-{config.apply_event_time}"
+        rel = rel.select(f"""*, '{year_col}'::DATE AS {TIME_COLNAME}""")
+
+    return rel
+
+
+def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols: list[str]) -> DuckDBPyRelation:
+    """Transform a relation into the event-table format.
+
+    Arguments
+    ---------
+    rel:
+        Relation with the table to process.
+    config:
+        The configuration class.
+    attribute_cols:
+        Column names of event attributes.
+    """
+    struct_query_inputs = [f"{col} := {col}" for col in attribute_cols]
+    struct_query = ", ".join(struct_query_inputs)
+    time_colname_query = f"{config.event_time_col} AS {TIME_COLNAME}" if config.has_event_col else TIME_COLNAME
+    rel = rel.select(f"""{config.rinpersoon_col} AS {PERSON_COLNAME},
+                     {time_colname_query},
+                     struct_pack({struct_query}) AS {NOTE_COLNAME}
+                     """)
+    return rel.order(f"{PERSON_COLNAME}, {TIME_COLNAME}")
+
+
+def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> dict[str, str]:
+    """Classify attributes as categorical or continuous.
+
+    Arguments
+    ---------
+    rel:
+        Relation with the data to operate on.
+    attr_cols:
+        List of column names in `rel` that are event attributes.
+
+    Notes
+    -----
+    Columns are classified as categorical if the set of unique values
+    in the column matches the set of categories in the .sav metadata.
+
+    In practice, attributes are sequentially classified as:
+        - continuous if their metadata has no value label
+        - continuous if the either the approximate or exact count of unique
+        values is above the number of declared categories
+        - categorical if the set of distinct values matches the set of
+        declared categories
+        - continuous otherwise
+    """
+    cols_without_value_labels = [col.variable for col in attr_col_meta if col.value_labels is None]
+    cols_with_value_labels = {col.variable: col.value_labels for col in attr_col_meta if col.value_labels is not None}
+
+    col_queries = [f"approx_count_distinct({col}) AS {col}" for col in cols_with_value_labels]
+    approx_distinct = rel.aggregate(", ".join(col_queries)).fetchall()[0]
+
+    continuous_cols = cols_without_value_labels
+    categorical_cols = []
+    unassigned_cols = set()
+    for (col, value_labels), approx_count in zip(cols_with_value_labels.items(), approx_distinct, strict=True):
+        if approx_count > len(value_labels):
+            continuous_cols.append(col)
+            continue
+        unassigned_cols.add(col)
+
+    distincts = rel.aggregate(f"COUNT(DISTINCT COLUMNS({list(unassigned_cols)}))")
+
+    for col in unassigned_cols:
+        n_distinct = distincts.select(col).fetchall()[0][0]
+        if n_distinct > len(cols_with_value_labels[col]):
+            continuous_cols.append(col)
+            unassigned_cols.remove(col)
+
+    for col in unassigned_cols:
+        uniques = rel.select(col).distinct().fetchall()
+        uniques = [x[0] for x in uniques]
+        if set(uniques) == set(cols_with_value_labels[col].keys()):
+            categorical_cols.append(col)
+            continue
+
+        continuous_cols.append(col)
+
+    attribute_col_types = {}
+    for col in continuous_cols:
+        attribute_col_types[col] = "continuous"
+    for col in categorical_cols:
+        attribute_col_types[col] = "categorical"
+
+    return attribute_col_types
+
+
+def replace_continuous_nulls(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> DuckDBPyRelation:
+    """Replace NULLs as per metadata and cast to DOUBLE.
+
+    Arguments
+    ---------
+    rel:
+        Relation with the data to operate on.
+    attr_col_meta:
+        Metadata of columns to process.
+    """
+    for col_meta in attr_col_meta:
+        attr_name = col_meta.variable
+        if col_meta.value_labels is None:
+            logger.debug("No value labels declared for %s", attr_name)
+            continue
+
+        missing_values = [float(x) for x in col_meta.value_labels]
+
+        rel = rel.select(f"""
+           * EXCLUDE {attr_name},
+            CASE WHEN
+               {attr_name} IN {missing_values} THEN NULL::DOUBLE
+               ELSE {attr_name}::DOUBLE
+            END AS {attr_name}
+        """)
+    return rel
+
 
 def convert_to_silver(
     source_manifest: SourceManifest, source_path: Path, source_filename: Path, dest_path: Path, config: SilverConfig
-) -> None:
+) -> SilverMetaRecord:
     """Convert bronze data to silver.
 
     Arguments
@@ -98,110 +237,62 @@ def convert_to_silver(
 
     Notes
     -----
-    Current assumptions in the function:
+    The function assumes that:
         - the column declared as person ID can be cast to integer without error
+        - the file metadata have a non-NULL `ref_period` if the config defines
+        a new event time column.
     """
     design_lookup = {"source_path": source_path, "source_filename": source_filename}
     file_record = FileMetaRecord.from_table(design_lookup, table=source_manifest)
-
     sav_meta_table = SavMetaTable(db_file=source_manifest.db_file)
 
     con = duckdb.connect()
-    rel = con.read_parquet(file_record.bronze_path)  # type: ignore[arg-type]
 
+    rel = con.read_parquet(file_record.bronze_path)  # type: ignore[arg-type]
     rel = rel.filter(f"{config.rinpersoons_col} == 'R'")
+    rel = define_event_time_col(rel, config, file_record)
 
     rel = rel.select(
         f"* EXCLUDE({config.rinpersoon_col}), CAST({config.rinpersoon_col} AS BIGINT) AS {config.rinpersoon_col}"
     )
-
-    if config.event_time_col:
-        has_event_col = True
-        rel = rel.select(f"""* EXCLUDE({config.event_time_col}),
-                         try_strptime({config.event_time_col}, '{config.event_time_col_fmt}')::DATE
-                         AS {config.event_time_col}""")
-        rel = rel.filter(f"{config.event_time_col} IS NOT NULL")
-    else:
-        has_event_col = False
-        year = file_record.ref_period.year
-        year_col = f"{year}-{config.apply_event_time}"
-        rel = rel.select(f"""*, '{year_col}'::DATE AS {TIME_COLNAME}""")
-
-    rel = rel.select(f"* EXCLUDE ({config.cols_to_drop})")
+    rel = rel.select(f"* EXCLUDE ({','.join(config.cols_to_drop)})")
 
     columns = rel.columns
     attribute_columns = filterfalse(lambda col: col in config.event_idx_columns, columns)
+    attribute_columns_meta = [
+        SavColumnMeta.from_table(lookup=design_lookup | {"variable": col}, table=sav_meta_table)
+        for col in attribute_columns
+    ]
 
-    attribute_col_types = {}
-    for attr_col in attribute_columns:
-        col_lookup = design_lookup | {"variable": attr_col}
-        col_meta = SavColumnMeta.from_table(lookup=col_lookup, table=sav_meta_table)
-        value_labels = col_meta.value_labels
+    # Use the full table to avoid any accidental misclassification
+    full_table_rel = con.read_parquet(file_record.bronze_path)  # type: ignore[arg-type]
+    attribute_col_types = classify_attributes(full_table_rel, attribute_columns_meta)
 
-        # TODO: use match-case?
-        if value_labels is None:  # TODO: is this right?
-            attribute_col_types[attr_col] = "continuous"
-            continue
+    continuous_col_meta = [
+        col_meta
+        for col_meta, (col_name, type_) in zip(attribute_columns_meta, attribute_col_types.items(), strict=True)
+        if type_ == "continuous"
+    ]
+    rel = replace_continuous_nulls(rel, continuous_col_meta)
 
-        n_labels = len(value_labels.keys())
-        n_distinct = rel.select(attr_col).distinct().aggregate("count(*)").fetchall()[0][0]
-        if n_distinct > n_labels:
-            attribute_col_types[attr_col] = "continuous"
-            continue
-
-        distinct_values = rel.select(attr_col).distinct().fetchall()
-        distinct_values = [x[0] for x in distinct_values]  # TODO: how to do better?
-        if set(distinct_values) == set(value_labels.keys()):
-            attribute_col_types[attr_col] = "categorical"
-            continue
-
-        attribute_col_types[attr_col] = "continuous"
-
-    # TODO: add here a list of column names in the right order and reuse below?
-
-    # TODO: merge this into the same function as above? ie, to avoid the
-    # DB queries a second time?
-    for attr_col, type_ in attribute_col_types.items():
-        if type_ == "categorical":
-            continue
-
-        col_lookup = design_lookup | {"variable": attr_col}
-        col_meta = SavColumnMeta.from_table(lookup=col_lookup, table=sav_meta_table)
-
-        if col_meta.value_labels is None:
-            logger.debug("No value labels declared for %s", attr_col)
-            continue
-
-        missing_values = list(col_meta.value_labels.keys())
-        missing_values = [float(x) for x in missing_values]
-        rel_with_invalid = rel.filter(f"{attr_col} IN {missing_values}").select(
-            f"* EXCLUDE {attr_col}, NULL::DOUBLE AS {attr_col}"
-        )
-        rel_with_valid = rel.filter(f"{attr_col} NOT IN {missing_values}")
-
-        rel = rel_with_valid.union(rel_with_invalid.select(",".join(rel_with_valid.columns)))
-
-    struct_query_inputs = [f"{col} := {col}" for col in attribute_col_types]
-    struct_query = ", ".join(struct_query_inputs)
-    time_colname_query = f"{config.event_time_col} AS {TIME_COLNAME}" if has_event_col else TIME_COLNAME
-    rel = rel.select(f"""{config.rinpersoon_col} AS {PERSON_COLNAME},
-                     {time_colname_query},
-                     struct_pack({struct_query}) AS {NOTE_COLNAME}
-                     """)
-
-    rel = rel.order(f"{PERSON_COLNAME}, {TIME_COLNAME}")
+    rel = make_event_table(rel, config, list(attribute_col_types.keys()))
 
     rel.to_parquet(str(dest_path))
+    con.close()
     # NOTE: see docs for potential speedups: https://duckdb.org/docs/lts/clients/python/relational_api#write_parquet
     # for instance, the `per_thread_output` option
 
-    con.close()
+    # TODO: config validation should take care of the typing errors here
+    return SilverMetaRecord(
+        silver_path=dest_path.parent,
+        file_name=Path(dest_path.name),
+        bronze_path=Path(file_record.bronze_path),  # type: ignore[arg-type]
+        bronze_id_col=config.rinpersoon_col,
+        bronze_event_time_col=config.event_time_col if config.has_event_col else config.apply_event_time,  # type: ignore[arg-type]
+        bronze_cols_dropped=config.cols_to_drop,
+        last_modified=datetime.now(UTC),
+    )
 
 
 # Todo
-
 # create quarantine table?
-# record metadata into silver table
-
-# Add test case where a date column is added - requires modularizing tests?
-# sql injection also for rel.filter - how to deal with it? through pydantic?

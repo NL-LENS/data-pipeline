@@ -33,8 +33,13 @@ class SilverConfig:
     event_time_col:
         Column name in bronze identifying the TIME.
     event_time_col_fmt:
-        Format of event_time_col (after converting to string).
+        Format of event_time_col in the bronze data (after converting to string).
         Follows the duckdb spec: https://duckdb.org/docs/lts/sql/functions/dateformat#format-specifiers
+    apply_event_time:
+        If given, creates a new column referring to event time. Must match
+        the format '%m-%d'. The currently only supported case
+        is to define the month and day, and an event column is created from the
+        year field in the metadata of the bronze field.
 
     Notes
     -----
@@ -50,7 +55,8 @@ class SilverConfig:
     time_cols: list[str]
     id_cols: list[str]
     event_time_col: str | None
-    event_time_col_fmt: str = "%Y-%m-%d"
+    event_time_col_fmt: None | str = "%Y-%m-%d"
+    apply_event_time: str | None = None
 
     @property
     def cols_to_drop(self) -> str:
@@ -64,7 +70,9 @@ class SilverConfig:
     @property
     def event_idx_columns(self) -> list[str | None]:
         """List of columns defining an event."""
-        return [self.rinpersoon_col, self.event_time_col]
+        if self.event_time_col:
+            return [self.rinpersoon_col, self.event_time_col]
+        return [self.rinpersoon_col, TIME_COLNAME]
 
 
 def convert_to_silver(
@@ -97,10 +105,18 @@ def convert_to_silver(
     rel = rel.select(
         f"* EXCLUDE({config.rinpersoon_col}), CAST({config.rinpersoon_col} AS BIGINT) AS {config.rinpersoon_col}"
     )
-    rel = rel.select(f"""* EXCLUDE({config.event_time_col}),
-                     try_strptime({config.event_time_col}, '{config.event_time_col_fmt}')::DATE
-                     AS {config.event_time_col}""")
-    rel = rel.filter(f"{config.event_time_col} IS NOT NULL")
+
+    if config.event_time_col:
+        has_event_col = True
+        rel = rel.select(f"""* EXCLUDE({config.event_time_col}),
+                         try_strptime({config.event_time_col}, '{config.event_time_col_fmt}')::DATE
+                         AS {config.event_time_col}""")
+        rel = rel.filter(f"{config.event_time_col} IS NOT NULL")
+    else:
+        has_event_col = False
+        year = file_record.ref_period.year
+        year_col = f"{year}-{config.apply_event_time}"
+        rel = rel.select(f"""*, '{year_col}'::DATE AS {TIME_COLNAME}""")
 
     rel = rel.select(f"* EXCLUDE ({config.cols_to_drop})")
 
@@ -158,8 +174,9 @@ def convert_to_silver(
 
     struct_query_inputs = [f"{col} := {col}" for col in attribute_col_types]
     struct_query = ", ".join(struct_query_inputs)
+    time_colname_query = f"{config.event_time_col} AS {TIME_COLNAME}" if has_event_col else TIME_COLNAME
     rel = rel.select(f"""{config.rinpersoon_col} AS {PERSON_COLNAME},
-                     {config.event_time_col} AS {TIME_COLNAME},
+                     {time_colname_query},
                      struct_pack({struct_query}) AS {NOTE_COLNAME}
                      """)
 
@@ -171,15 +188,8 @@ def convert_to_silver(
 
 
 # Todo
-# TODO: create silver schema/table?
-# ingested at?
-# bronze source?
-# categorical/continuous mapping
-# else?
 
 # create quarantine table?
 
-# TODO: add test for dict | None type (read function)
-# TODO: break out function for type detection; unit-test it
 # Add test case where a date column is added - requires modularizing tests?
 # sql injection also for rel.filter - how to deal with it? through pydantic?

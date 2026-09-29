@@ -249,7 +249,6 @@ class TestSilver(TestData):
 
         source_manifest = SourceManifest(db_file)
 
-        # TODO: run this once as a fixture and then run the specific checks?
         convert_to_silver(
             source_manifest=source_manifest,
             source_path=input_paths["source_path"],

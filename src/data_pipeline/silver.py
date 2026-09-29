@@ -48,6 +48,15 @@ class SilverConfig:
         - time_cols that are not event_time_col.
         - the RINPERSOONS column
 
+    The config supports two uses of event time data:
+        - using an existing column as the event time column. Requires specifying
+        `event_time_col` and `event_time_col_fmt`.
+        - applying a new column. Requires specifying `apply_event_time` and
+        setting `event_time_col=None` and `time_cols=[]`. The latter assumes that
+        the bronze file does not have any time column that needs to be dropped
+        in silver.
+
+    These constraints are currently not enforced by the config.
     """
 
     rinpersoon_col: str
@@ -182,7 +191,9 @@ def convert_to_silver(
 
     rel = rel.order(f"{PERSON_COLNAME}, {TIME_COLNAME}")
 
-    rel.to_parquet(str(dest_path))  # TODO: necessary to stream? how?
+    rel.to_parquet(str(dest_path))
+    # NOTE: see docs for potential speedups: https://duckdb.org/docs/lts/clients/python/relational_api#write_parquet
+    # for instance, the `per_thread_output` option
 
     con.close()
 
@@ -190,6 +201,7 @@ def convert_to_silver(
 # Todo
 
 # create quarantine table?
+# record metadata into silver table
 
 # Add test case where a date column is added - requires modularizing tests?
 # sql injection also for rel.filter - how to deal with it? through pydantic?

@@ -17,22 +17,12 @@ from data_pipeline.bronze import stream_to_bronze
 from data_pipeline.bronze import write_column_metadata_to_db
 from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SourceManifest
+from .conftest import TestData
 
 
-class TestBase:
-    """Base class with test configs and fixtures."""
-
-    @pytest.fixture
-    def db_file(self, tmp_path: Path) -> Path:
-        """File for metadata database."""
-        return tmp_path / "metadata.db"
-
-
-class TestBronze(TestBase):
+class TestBronze(TestData):
     """Test conversion from source to bronze."""
 
-    sample_size: int = 100_000
-    rng: np.random._generator.Generator = np.random.default_rng(1234)
     file_in: Path = Path("file_in.sav")
     missing_file: Path = Path("missing_file.sav")
     file_out: str = "file_out.parquet"
@@ -80,20 +70,7 @@ class TestBronze(TestBase):
         table.insert_many([file_record1, file_record2])
 
     @pytest.fixture
-    def random_dates(self) -> np.ndarray:
-        """Generate a set of random dates."""
-        start_date = np.datetime64("2000-02-13")
-        end_date = np.datetime64("2025-12-25")
-        day_range = (end_date - start_date).item().days
-
-        dates = np.repeat(start_date, self.sample_size)
-        int_deltas = self.rng.integers(1, day_range, self.sample_size)
-        time_deltas = np.array(int_deltas, dtype=np.timedelta64)
-
-        return dates + time_deltas
-
-    @pytest.fixture
-    def sav_test_data(self, random_dates: np.ndarray, sav_file: Path) -> pl.DataFrame:
+    def sav_test_data(self, sav_file: Path) -> pl.DataFrame:
         """Create .sav and return corresponding dataframe.
 
         The dataframe has column types that are reverse-engineered from SPOLIS and INPATAB examples.
@@ -107,12 +84,10 @@ class TestBronze(TestBase):
         are stored as-is in the .sav file.
         """
         data_dict = {
-            "person_id": self.rng.integers(1, 1_000_000_000, size=self.sample_size).astype(
-                str
-            ),  # person IDs are coded as strings
-            "date": random_dates.astype(str),  # sav files store dates as str
+            "person_id": self.make_identifiers(1_000_000_000).astype(str),  # person IDs are coded as strings
+            "date": self.random_dates().astype(str),  # sav files store dates as str
             "wage": self.rng.random(size=self.sample_size).astype(np.float64),
-            "sector": self.rng.choice(["1", "2", "3"], size=self.sample_size),
+            "sector": self.make_categorical(["1", "2", "3"], [0.2, 0.4, 0.4]),
             "null_col": np.array([None] * self.sample_size, dtype=np.float64),
         }
         # NOTE/TODO: types when writing to sav are complicated
@@ -135,10 +110,8 @@ class TestBronze(TestBase):
             ],  # allow 110 for the included upper bound
         }
 
-        for column, values in possible_missing_values.items():
-            n_missing = 500
-            missing_idx = self.rng.integers(0, self.sample_size - 1, n_missing)
-            data_dict[column][missing_idx] = self.rng.choice(values, n_missing)
+        for column, missing_value in possible_missing_values.items():
+            data_dict[column] = self.corrupt(x=data_dict[column], inject=missing_value, size=500)
 
         data = pl.DataFrame(data_dict)
         pyreadstat.write_sav(
@@ -247,7 +220,7 @@ class TestBronze(TestBase):
         mock_write_column_metadata_to_db.assert_called_once_with(db_file, tmp_path, self.file_in)
 
 
-class TestBuild(TestBase):
+class TestBuild(TestData):
     """Test bronze build."""
 
     @pytest.fixture

@@ -21,7 +21,7 @@ class TestData:
         return self.rng.choice(categories, p=probs, size=self.sample_size)
 
     def corrupt(
-        self, x: np.ndarray, inject: np.int64 | np.float64 | str | None, size: int, valid: bool = True
+        self, x: np.ndarray, inject: list, size: int, valid: bool = True, probs: list[float] | None = None
     ) -> np.ndarray:
         """Corrupt an array with a value.
 
@@ -29,14 +29,21 @@ class TestData:
         ---------
         x:
             array to modify
+        inject:
+            List of values to inject, chosen randomly according to `probs`.
+        size:
+            Number of rows to corrupt. Should be no larger than `x`.
         valid:
             If True, the rows with the corrupted data are expected
             to be modified in silver.
             If False, the rows with the corrupted data
             are expected to be dropped in silver.
+        probs:
+            If given, probabilities for the respective elements in `inject`.
+            Defaults to equal probabilities.
         """
         missing_idx = self.rng.choice(np.arange(self.sample_size), size, replace=False)
-        x[missing_idx] = inject
+        x[missing_idx] = self.rng.choice(inject, size, p=probs)
         if not valid:
             self.validity_mask[missing_idx] = 0
         return x

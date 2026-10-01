@@ -154,43 +154,42 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
         declared categories
         - continuous otherwise
     """
-    cols_without_value_labels = [col.variable for col in attr_col_meta if col.value_labels is None]
-    cols_with_value_labels = {col.variable: col.value_labels for col in attr_col_meta if col.value_labels is not None}
+    attribute_col_types = {}
+    unassigned_cols = set()
+    cols_to_value_lables_mapping = {}
 
-    col_queries = [f"approx_count_distinct({col}) AS {col}" for col in cols_with_value_labels]
+    for col in attr_col_meta:
+        if col.value_labels is None:
+            attribute_col_types[col] = "continuous"
+            continue
+        unassigned_cols.add(col.variable)
+        cols_to_value_lables_mapping[col.variable] = col.value_labels
+
+    col_queries = [f"approx_count_distinct({col}) AS {col}" for col in cols_to_value_lables_mapping]
     approx_distinct = rel.aggregate(", ".join(col_queries)).fetchall()[0]
 
-    continuous_cols = cols_without_value_labels
-    categorical_cols = []
-    unassigned_cols = set()
-    for (col, value_labels), approx_count in zip(cols_with_value_labels.items(), approx_distinct, strict=True):
-        if approx_count > len(value_labels):
-            continuous_cols.append(col)
+    for (col, value_labels), approx_count in zip(cols_to_value_lables_mapping.items(), approx_distinct, strict=True):
+        if approx_count <= len(value_labels):
             continue
-        unassigned_cols.add(col)
+        attribute_col_types[col] = "continuous"
+        unassigned_cols.remove(col)
 
-    distincts = rel.aggregate(f"COUNT(DISTINCT COLUMNS({list(unassigned_cols)}))")
+    count_distincts = rel.aggregate(f"COUNT(DISTINCT COLUMNS({list(unassigned_cols)}))")
 
     for col in unassigned_cols:
-        n_distinct = distincts.select(col).fetchall()[0][0]
-        if n_distinct > len(cols_with_value_labels[col]):
-            continuous_cols.append(col)
-            unassigned_cols.remove(col)
+        n_distinct = count_distincts.select(col).fetchall()[0][0]
+        if n_distinct <= len(cols_to_value_lables_mapping[col]):
+            continue
+        attribute_col_types[col] = "continuous"
+        unassigned_cols.remove(col)
 
     for col in unassigned_cols:
         uniques = rel.select(col).distinct().fetchall()
         uniques = [x[0] for x in uniques]
-        if set(uniques) == set(cols_with_value_labels[col].keys()):
-            categorical_cols.append(col)
+        if set(uniques) == set(cols_to_value_lables_mapping[col].keys()):
+            attribute_col_types[col] = "categorical"
             continue
-
-        continuous_cols.append(col)
-
-    attribute_col_types = {}
-    for col in continuous_cols:
         attribute_col_types[col] = "continuous"
-    for col in categorical_cols:
-        attribute_col_types[col] = "categorical"
 
     return attribute_col_types
 
@@ -281,6 +280,7 @@ def convert_to_silver(
     con.close()
     # NOTE: see docs for potential speedups: https://duckdb.org/docs/lts/clients/python/relational_api#write_parquet
     # for instance, the `per_thread_output` option
+    # Also consider adding a memory limit to the connection if necessary
 
     # TODO: config validation should take care of the typing errors here
     return SilverMetaRecord(

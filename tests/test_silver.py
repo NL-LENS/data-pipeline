@@ -78,18 +78,18 @@ class TestSilver(TestData):
         }
 
         data_dict["CONTINUOUS_ATTR1"] = self.corrupt(
-            x=data_dict["CONTINUOUS_ATTR1"], inject=np.float64(99999), size=int(0.02 * self.sample_size)
+            x=data_dict["CONTINUOUS_ATTR1"], inject=[99999], size=int(0.02 * self.sample_size)
         )
 
         data_dict["CONTINUOUS_ATTR2"] = self.corrupt(
-            x=data_dict["CONTINUOUS_ATTR2"], inject=np.float64(99998), size=int(0.01 * self.sample_size)
-        )
-        data_dict["CONTINUOUS_ATTR2"] = self.corrupt(
-            x=data_dict["CONTINUOUS_ATTR2"], inject=np.float64(99997), size=int(0.02 * self.sample_size)
+            x=data_dict["CONTINUOUS_ATTR2"],
+            inject=[99998.0, 99997.0],
+            probs=[1 / 3, 2 / 3],
+            size=int(0.03 * self.sample_size),
         )
 
         data_dict["RINPERSOONS"] = self.corrupt(
-            x=data_dict["RINPERSOONS"], inject="not_R", size=int(0.05 * self.sample_size), valid=False
+            x=data_dict["RINPERSOONS"], inject=["not_R"], size=int(0.05 * self.sample_size), valid=False
         )
 
         if config.event_time_col:
@@ -99,7 +99,7 @@ class TestSilver(TestData):
             }
 
             data_dict["TIME1"] = self.corrupt(
-                x=data_dict["TIME1"], inject="--------", size=int(0.02 * self.sample_size), valid=False
+                x=data_dict["TIME1"], inject=["--------"], size=int(0.02 * self.sample_size), valid=False
             )
 
         data = pl.DataFrame(data_dict)

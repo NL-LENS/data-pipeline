@@ -154,13 +154,13 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
         declared categories
         - continuous otherwise
     """
-    attribute_col_types = {}
-    unassigned_cols = set()
-    cols_to_value_lables_mapping = {}
+    attribute_col_types: dict[str, str] = {}
+    unassigned_cols: set[str] = set()
+    cols_to_value_lables_mapping: dict[str, dict] = {}
 
     for col in attr_col_meta:
         if col.value_labels is None:
-            attribute_col_types[col] = "continuous"
+            attribute_col_types[col.variable] = "continuous"
             continue
         unassigned_cols.add(col.variable)
         cols_to_value_lables_mapping[col.variable] = col.value_labels
@@ -291,6 +291,7 @@ def convert_to_silver(
         bronze_event_time_col=config.event_time_col if config.has_event_col else config.apply_event_time,  # type: ignore[arg-type]
         bronze_cols_dropped=config.cols_to_drop,
         last_modified=datetime.now(UTC),
+        event_note_types=attribute_col_types,
     )
 
 

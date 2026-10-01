@@ -139,6 +139,7 @@ class SilverMetaRecord(DuckDBRecord):
     bronze_id_col: str
     bronze_event_time_col: str
     bronze_cols_dropped: list[str]
+    event_note_types: dict[str, str]
 
 
 # how to deal with years? some files may be yearly, others not? - partition by

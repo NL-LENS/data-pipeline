@@ -40,8 +40,10 @@ jobs:
         shell: bash -e {0}
         run: |
           python -m venv --system-site-packages .venv
-          source .venv/Scripts/activate
+          .venv/Scripts/activate
           python -m pip install --no-index pytest
           python -m pip install --no-index --no-build-isolation .
       - name: Run unit tests
-        run: .venv/Scripts/python -m pytest -v
+        run: |
+          .venv/Scripts/activate
+          python -m pytest -v

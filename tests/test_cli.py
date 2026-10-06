@@ -1,4 +1,3 @@
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -12,14 +11,8 @@ import data_pipeline.cli
     [["lens", "--help"], ["lens", "init", "--help"], ["lens", "build", "bronze", "--help"]],
     ids=["base", "init", "build"],
 )
-def test_cli_can_be_called(lens_command: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_can_be_called(lens_command: list[str]) -> None:
     """Test that --help works for the main and for subcommands."""
-    workflow_rev = os.environ.get("GITHUB_WORKFLOW_REF", "")
-    if workflow_rev and "build_cbs.yml" in workflow_rev:
-        # Add current venv to path -- the cli executable is installed there
-        venv_path = Path(sys.executable).parent
-        monkeypatch.setenv("PATH", str(venv_path), prepend=os.pathsep)
-
     result = subprocess.run(lens_command, check=True)  # noqa: S603
     assert result.returncode == 0
 

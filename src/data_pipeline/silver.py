@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
+from enum import StrEnum
 from itertools import filterfalse
 from pathlib import Path
 import duckdb
@@ -17,6 +18,13 @@ logger = logging.getLogger(__name__)
 TIME_COLNAME = "DATE"
 PERSON_COLNAME = "RINPERSOON"
 NOTE_COLNAME = "NOTE"
+
+
+class NoteAttributeType(StrEnum):
+    """Encodes types of note attributes."""
+
+    continuous = "continuous"
+    categorical = "categorical"
 
 
 @dataclass
@@ -131,7 +139,7 @@ def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols
     return rel.order(f"{PERSON_COLNAME}, {TIME_COLNAME}")
 
 
-def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> dict[str, str]:
+def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> dict[str, NoteAttributeType]:
     """Classify attributes as categorical or continuous.
 
     Arguments
@@ -154,44 +162,45 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
         declared categories
         - continuous otherwise
     """
-    attribute_col_types: dict[str, str] = {}
     unassigned_cols: set[str] = set()
-    cols_to_value_lables_mapping: dict[str, dict] = {}
+    cols_to_value_labels: dict[str, dict] = {}
+    cols_to_attr_type: dict[str, NoteAttributeType] = {}
 
     for col in attr_col_meta:
         if col.value_labels is None:
-            attribute_col_types[col.variable] = "continuous"
+            cols_to_attr_type[col.variable] = NoteAttributeType.continuous
             continue
         unassigned_cols.add(col.variable)
-        cols_to_value_lables_mapping[col.variable] = col.value_labels
+        cols_to_value_labels[col.variable] = col.value_labels
 
-    col_queries = [f"approx_count_distinct({col}) AS {col}" for col in cols_to_value_lables_mapping]
-    approx_distinct = rel.aggregate(", ".join(col_queries)).fetchall()[0]
+    col_queries = [f"approx_count_distinct({col}) AS {col}" for col in cols_to_value_labels]
+    approx_distinct_rel = rel.aggregate(", ".join(col_queries)).execute()
 
-    for (col, value_labels), approx_count in zip(cols_to_value_lables_mapping.items(), approx_distinct, strict=True):
-        if approx_count <= len(value_labels):
+    for col, value_labels in cols_to_value_labels.items():
+        approx_distinct_count = approx_distinct_rel.select(col).fetchall()[0][0]
+        if approx_distinct_count <= len(value_labels):
             continue
-        attribute_col_types[col] = "continuous"
+        cols_to_attr_type[col] = NoteAttributeType.continuous
         unassigned_cols.remove(col)
 
     count_distincts = rel.aggregate(f"COUNT(DISTINCT COLUMNS({list(unassigned_cols)}))")
 
     for col in unassigned_cols:
         n_distinct = count_distincts.select(col).fetchall()[0][0]
-        if n_distinct <= len(cols_to_value_lables_mapping[col]):
+        if n_distinct <= len(cols_to_value_labels[col]):
             continue
-        attribute_col_types[col] = "continuous"
+        cols_to_attr_type[col] = NoteAttributeType.continuous
         unassigned_cols.remove(col)
 
     for col in unassigned_cols:
         uniques = rel.select(col).distinct().fetchall()
         uniques = [x[0] for x in uniques]
-        if set(uniques) == set(cols_to_value_lables_mapping[col].keys()):
-            attribute_col_types[col] = "categorical"
+        if set(uniques) == set(cols_to_value_labels[col].keys()):
+            cols_to_attr_type[col] = NoteAttributeType.categorical
             continue
-        attribute_col_types[col] = "continuous"
+        cols_to_attr_type[col] = NoteAttributeType.continuous
 
-    return attribute_col_types
+    return cols_to_attr_type
 
 
 def replace_continuous_nulls(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> DuckDBPyRelation:
@@ -265,16 +274,16 @@ def convert_to_silver(
 
     # Use the full table to avoid any accidental misclassification
     full_table_rel = con.read_parquet(file_record.bronze_path)  # type: ignore[arg-type]
-    attribute_col_types = classify_attributes(full_table_rel, attribute_columns_meta)
+    cols_to_attr_type = classify_attributes(full_table_rel, attribute_columns_meta)
 
     continuous_col_meta = [
         col_meta
-        for col_meta, (col_name, type_) in zip(attribute_columns_meta, attribute_col_types.items(), strict=True)
+        for col_meta, (col_name, type_) in zip(attribute_columns_meta, cols_to_attr_type.items(), strict=True)
         if type_ == "continuous"
     ]
     rel = replace_continuous_nulls(rel, continuous_col_meta)
 
-    rel = make_event_table(rel, config, list(attribute_col_types.keys()))
+    rel = make_event_table(rel, config, list(cols_to_attr_type.keys()))
 
     rel.to_parquet(str(dest_path))
     con.close()
@@ -291,7 +300,7 @@ def convert_to_silver(
         bronze_event_time_col=config.event_time_col if config.has_event_col else config.apply_event_time,  # type: ignore[arg-type]
         bronze_cols_dropped=config.cols_to_drop,
         last_modified=datetime.now(UTC),
-        event_note_types=attribute_col_types,
+        event_note_types=cols_to_attr_type,
     )
 
 

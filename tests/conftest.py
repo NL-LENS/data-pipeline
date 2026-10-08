@@ -20,6 +20,10 @@ class TestData:
         """Make a categorical array."""
         return self.rng.choice(categories, p=probs, size=self.sample_size)
 
+    def make_continuous(self) -> np.ndarray:
+        """Make a continuous array."""
+        return self.rng.random(size=self.sample_size).astype(np.float64)
+
     def corrupt(
         self, x: np.ndarray, inject: list, size: int, valid: bool = True, probs: list[float] | None = None
     ) -> np.ndarray:

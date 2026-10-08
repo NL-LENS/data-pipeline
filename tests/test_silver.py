@@ -1,3 +1,4 @@
+from collections.abc import Generator
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
@@ -5,6 +6,7 @@ import duckdb
 import numpy as np
 import polars as pl
 import pytest
+from _duckdb import DuckDBPyConnection
 from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SavColumnMeta
 from data_pipeline.schemas import SavMetaTable
@@ -12,9 +14,85 @@ from data_pipeline.schemas import SourceManifest
 from data_pipeline.silver import NOTE_COLNAME
 from data_pipeline.silver import PERSON_COLNAME
 from data_pipeline.silver import TIME_COLNAME
+from data_pipeline.silver import NoteAttributeType
 from data_pipeline.silver import SilverConfig
+from data_pipeline.silver import classify_attributes
 from data_pipeline.silver import convert_to_silver
 from .conftest import TestData
+
+
+@pytest.fixture
+def db_con() -> Generator[duckdb.DuckDBPyConnection]:
+    """Open temporary duckdb connection for duration of the test."""
+    con = duckdb.connect()
+    yield con
+    con.close()
+
+
+class TestClassifyAttributes(TestData):
+    """Test the attribute classification."""
+
+    def generate_input_data(
+        self, con: DuckDBPyConnection, input_dict: dict[str, tuple[str, list[str] | None]]
+    ) -> tuple[duckdb.DuckDBPyRelation, list[SavColumnMeta]]:
+        """Generate input data along metadata."""
+        data_dict = {}
+        metadata = []
+        for col, (attribute_type, value_label_keys) in input_dict.items():
+            if attribute_type == NoteAttributeType.CATEGORICAL:
+                if value_label_keys is None:
+                    msg = "For categorical columns, value_label_keys are necessary"
+                    raise RuntimeError(msg)
+                data_dict[col] = self.make_categorical(value_label_keys)
+            elif attribute_type == NoteAttributeType.CONTINUOUS:
+                col_array = self.rng.random(size=self.sample_size).astype(np.float64)
+                if value_label_keys:
+                    col_array = self.corrupt(col_array, inject=value_label_keys, size=int(0.05 * self.sample_size))
+
+                data_dict[col] = col_array
+
+            current_labels = None
+            if value_label_keys:
+                current_labels = dict.fromkeys(value_label_keys, "")  # label value unused in this function
+
+            meta = SavColumnMeta(
+                variable=col,
+                value_labels=current_labels,
+                # -- same for all
+                source_path=Path("some/path"),
+                source_filename=Path("file.sav"),
+                original_variable="some_var",
+                readstat_type="str",
+                description="",
+            )
+
+            metadata.append(meta)
+
+        rel = con.from_arrow(pl.DataFrame(data_dict).to_arrow())
+
+        return rel, metadata
+
+    @pytest.mark.parametrize(
+        "input_dict",
+        [
+            {
+                "col_a": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"]),
+                "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"]),
+            },
+            {
+                "col_a": (NoteAttributeType.CONTINUOUS, None),
+                "col_b": (NoteAttributeType.CONTINUOUS, None),
+            },
+        ],
+        ids=["categorical_only", "continuous_only"],
+    )
+    def test_classify_attributes(self, db_con: DuckDBPyConnection, input_dict: dict[str, tuple[str, list[str] | None]]):
+        """Test the classify_attributes function."""
+        rel, attr_col_meta = self.generate_input_data(db_con, input_dict)
+        result = classify_attributes(rel, attr_col_meta)
+        for col, (expected_type, _) in input_dict.items():
+            assert result[col] == expected_type, "event attribute incorrectly classified"
+
 
 config_with_existing_time_col = SilverConfig(
     rinpersoon_col="RINPERSOON",
@@ -71,8 +149,8 @@ class TestSilver(TestData):
             "RINPERSOON": self.make_identifiers(),
             "RINPERSOONS": self.make_categorical(["R"], [1]),
             "IRRELEVANT_ID": self.make_identifiers(),
-            "CONTINUOUS_ATTR1": self.rng.random(size=self.sample_size).astype(np.float64),
-            "CONTINUOUS_ATTR2": self.rng.random(size=self.sample_size).astype(np.float64),
+            "CONTINUOUS_ATTR1": self.make_continuous(),
+            "CONTINUOUS_ATTR2": self.make_continuous(),
             "CAT_ATTR1": self.make_categorical(["a", "b", "c", "missing"], [0.1, 0.6, 0.2, 0.1]),
             "CAT_ATTR2": self.make_categorical(["x", "y", "missing"], [0.2, 0.75, 0.05]),
         }

@@ -26,8 +26,8 @@ APPROX_COUNT_BUFFER = 10
 class NoteAttributeType(StrEnum):
     """Encodes types of note attributes."""
 
-    continuous = "continuous"
-    categorical = "categorical"
+    CONTINUOUS = "continuous"
+    CATEGORICAL = "categorical"
 
 
 @dataclass
@@ -175,10 +175,13 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
 
     for col_meta in attr_col_meta:
         if col_meta.value_labels is None:
-            cols_to_attr_type[col_meta.variable] = NoteAttributeType.continuous
+            cols_to_attr_type[col_meta.variable] = NoteAttributeType.CONTINUOUS
             continue
         unassigned_cols.add(col_meta.variable)
         cols_to_value_labels[col_meta.variable] = col_meta.value_labels
+
+    if len(cols_to_value_labels) == 0:
+        return cols_to_attr_type
 
     col_queries = [f"approx_count_distinct({col}) AS {col}" for col in cols_to_value_labels]
     approx_distinct_rel = rel.aggregate(", ".join(col_queries)).execute()
@@ -187,7 +190,7 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
         approx_distinct_count = approx_distinct_rel.select(col).fetchall()[0][0]
         if approx_distinct_count <= APPROX_COUNT_BUFFER * len(value_labels):
             continue
-        cols_to_attr_type[col] = NoteAttributeType.continuous
+        cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
         unassigned_cols.remove(col)
 
     count_distincts = rel.aggregate(f"COUNT(DISTINCT COLUMNS({list(unassigned_cols)}))")
@@ -196,16 +199,16 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
         n_distinct = count_distincts.select(col).fetchall()[0][0]
         if n_distinct <= len(cols_to_value_labels[col]):
             continue
-        cols_to_attr_type[col] = NoteAttributeType.continuous
+        cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
         unassigned_cols.remove(col)
 
     for remaining_col in list(unassigned_cols):
         uniques = rel.select(remaining_col).distinct().fetchall()
         uniques = [x[0] for x in uniques]
         if set(uniques) == set(cols_to_value_labels[remaining_col].keys()):
-            cols_to_attr_type[remaining_col] = NoteAttributeType.categorical
+            cols_to_attr_type[remaining_col] = NoteAttributeType.CATEGORICAL
             continue
-        cols_to_attr_type[remaining_col] = NoteAttributeType.continuous
+        cols_to_attr_type[remaining_col] = NoteAttributeType.CATEGORICAL
 
     return cols_to_attr_type
 
@@ -283,10 +286,11 @@ def convert_to_silver(
     full_table_rel = con.read_parquet(file_record.bronze_path)  # type: ignore[arg-type]
     cols_to_attr_type = classify_attributes(full_table_rel, attribute_columns_meta)
 
+    # TODO: this is also dangerous; use better approach w/o zipping
     continuous_col_meta = [
         col_meta
         for col_meta, (col_name, type_) in zip(attribute_columns_meta, cols_to_attr_type.items(), strict=True)
-        if type_ == "continuous"
+        if type_ == NoteAttributeType.CONTINUOUS
     ]
     rel = replace_continuous_nulls(rel, continuous_col_meta)
 

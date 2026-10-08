@@ -19,6 +19,9 @@ TIME_COLNAME = "DATE"
 PERSON_COLNAME = "RINPERSOON"
 NOTE_COLNAME = "NOTE"
 
+#: Buffer multiplier for approximate distinct-count classification.
+APPROX_COUNT_BUFFER = 10
+
 
 class NoteAttributeType(StrEnum):
     """Encodes types of note attributes."""
@@ -156,11 +159,15 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
 
     In practice, attributes are sequentially classified as:
         - continuous if their metadata has no value label
-        - continuous if the either the approximate or exact count of unique
-        values is above the number of declared categories
+        - continuous if the either the approximate count of unique
+        values is more than :py:data:`~data_pipeline.silver.APPROX_COUNT_BUFFER`
+        times the number of declared categories, or
+        if the exact count of unique values is above the number of declared
+        categories.
         - categorical if the set of distinct values matches the set of
         declared categories
         - continuous otherwise
+
     """
     unassigned_cols: set[str] = set()
     cols_to_value_labels: dict[str, dict] = {}
@@ -178,7 +185,7 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
 
     for col, value_labels in cols_to_value_labels.items():
         approx_distinct_count = approx_distinct_rel.select(col).fetchall()[0][0]
-        if approx_distinct_count <= len(value_labels):
+        if approx_distinct_count <= APPROX_COUNT_BUFFER * len(value_labels):
             continue
         cols_to_attr_type[col] = NoteAttributeType.continuous
         unassigned_cols.remove(col)

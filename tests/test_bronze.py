@@ -156,7 +156,10 @@ class TestBronze(TestBase):
         # is to read with user_missing = False and ignore `meta.missing_ranges`
         return data.with_columns(
             pl.when(pl.col("sector") == "y").then(None).otherwise(pl.col("sector")).alias("sector"),
-            pl.when(pl.col("wage").is_in(np.arange(100, 111))).then(None).otherwise(pl.col("wage")).alias("wage"),
+            pl.when(pl.col("wage").is_in(np.arange(100, 111).astype(np.float64)))
+            .then(None)
+            .otherwise(pl.col("wage"))
+            .alias("wage"),
         )
 
     def test_stream_to_bronze(

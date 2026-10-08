@@ -139,7 +139,7 @@ def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols
     return rel.order(f"{PERSON_COLNAME}, {TIME_COLNAME}")
 
 
-def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> dict[str, NoteAttributeType]:
+def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> dict[str, str]:
     """Classify attributes as categorical or continuous.
 
     Arguments
@@ -164,14 +164,14 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
     """
     unassigned_cols: set[str] = set()
     cols_to_value_labels: dict[str, dict] = {}
-    cols_to_attr_type: dict[str, NoteAttributeType] = {}
+    cols_to_attr_type: dict[str, str] = {}
 
-    for col in attr_col_meta:
-        if col.value_labels is None:
-            cols_to_attr_type[col.variable] = NoteAttributeType.continuous
+    for col_meta in attr_col_meta:
+        if col_meta.value_labels is None:
+            cols_to_attr_type[col_meta.variable] = NoteAttributeType.continuous
             continue
-        unassigned_cols.add(col.variable)
-        cols_to_value_labels[col.variable] = col.value_labels
+        unassigned_cols.add(col_meta.variable)
+        cols_to_value_labels[col_meta.variable] = col_meta.value_labels
 
     col_queries = [f"approx_count_distinct({col}) AS {col}" for col in cols_to_value_labels]
     approx_distinct_rel = rel.aggregate(", ".join(col_queries)).execute()
@@ -185,20 +185,20 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
 
     count_distincts = rel.aggregate(f"COUNT(DISTINCT COLUMNS({list(unassigned_cols)}))")
 
-    for col in unassigned_cols:
+    for col in list(unassigned_cols):
         n_distinct = count_distincts.select(col).fetchall()[0][0]
         if n_distinct <= len(cols_to_value_labels[col]):
             continue
         cols_to_attr_type[col] = NoteAttributeType.continuous
         unassigned_cols.remove(col)
 
-    for col in unassigned_cols:
-        uniques = rel.select(col).distinct().fetchall()
+    for remaining_col in list(unassigned_cols):
+        uniques = rel.select(remaining_col).distinct().fetchall()
         uniques = [x[0] for x in uniques]
-        if set(uniques) == set(cols_to_value_labels[col].keys()):
-            cols_to_attr_type[col] = NoteAttributeType.categorical
+        if set(uniques) == set(cols_to_value_labels[remaining_col].keys()):
+            cols_to_attr_type[remaining_col] = NoteAttributeType.categorical
             continue
-        cols_to_attr_type[col] = NoteAttributeType.continuous
+        cols_to_attr_type[remaining_col] = NoteAttributeType.continuous
 
     return cols_to_attr_type
 

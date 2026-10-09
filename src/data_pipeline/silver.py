@@ -159,7 +159,7 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
 
     In practice, attributes are sequentially classified as:
         - continuous if their metadata has no value label
-        - continuous if the either the approximate count of unique
+        - continuous if either the approximate count of unique
         values is more than :py:data:`~data_pipeline.silver.APPROX_COUNT_BUFFER`
         times the number of declared categories, or
         if the exact count of unique values is above the number of declared
@@ -193,6 +193,9 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
         cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
         unassigned_cols.remove(col)
 
+    if len(unassigned_cols) == 0:
+        return cols_to_attr_type
+
     count_distincts = rel.aggregate(f"COUNT(DISTINCT COLUMNS({list(unassigned_cols)}))")
 
     for col in list(unassigned_cols):
@@ -202,13 +205,16 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
         cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
         unassigned_cols.remove(col)
 
+    if len(unassigned_cols) == 0:
+        return cols_to_attr_type
+
     for remaining_col in list(unassigned_cols):
         uniques = rel.select(remaining_col).distinct().fetchall()
         uniques = [x[0] for x in uniques]
         if set(uniques) == set(cols_to_value_labels[remaining_col].keys()):
             cols_to_attr_type[remaining_col] = NoteAttributeType.CATEGORICAL
             continue
-        cols_to_attr_type[remaining_col] = NoteAttributeType.CATEGORICAL
+        cols_to_attr_type[remaining_col] = NoteAttributeType.CONTINUOUS
 
     return cols_to_attr_type
 

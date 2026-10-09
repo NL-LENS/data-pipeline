@@ -33,12 +33,12 @@ class TestClassifyAttributes(TestData):
     """Test the attribute classification."""
 
     def generate_input_data(
-        self, con: DuckDBPyConnection, input_dict: dict[str, tuple[str, list[str] | None]]
+        self, con: DuckDBPyConnection, input_dict: dict[str, tuple[str, list[str] | None, float | None]]
     ) -> tuple[duckdb.DuckDBPyRelation, list[SavColumnMeta]]:
         """Generate input data along metadata."""
         data_dict = {}
         metadata = []
-        for col, (attribute_type, value_label_keys) in input_dict.items():
+        for col, (attribute_type, value_label_keys, user_frac_to_corrupt) in input_dict.items():
             if attribute_type == NoteAttributeType.CATEGORICAL:
                 if value_label_keys is None:
                     msg = "For categorical columns, value_label_keys are necessary"
@@ -47,7 +47,10 @@ class TestClassifyAttributes(TestData):
             elif attribute_type == NoteAttributeType.CONTINUOUS:
                 col_array = self.rng.random(size=self.sample_size).astype(np.float64)
                 if value_label_keys:
-                    col_array = self.corrupt(col_array, inject=value_label_keys, size=int(0.05 * self.sample_size))
+                    frac_to_corrupt = 0.05 if user_frac_to_corrupt is None else user_frac_to_corrupt
+                    col_array = self.corrupt(
+                        col_array, inject=value_label_keys, size=int(frac_to_corrupt * self.sample_size)
+                    )
 
                 data_dict[col] = col_array
 
@@ -73,25 +76,36 @@ class TestClassifyAttributes(TestData):
         return rel, metadata
 
     @pytest.mark.parametrize(
-        "input_dict",
+        ("input_dict"),
         [
             {
-                "col_a": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"]),
-                "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"]),
+                "col_a": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
+                "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
             },
             {
-                "col_a": (NoteAttributeType.CONTINUOUS, None),
-                "col_b": (NoteAttributeType.CONTINUOUS, None),
+                "col_a": (NoteAttributeType.CONTINUOUS, None, None),
+                "col_b": (NoteAttributeType.CONTINUOUS, None, None),
+            },
+            {
+                "col_a": (NoteAttributeType.CONTINUOUS, None, None),
+                "col_b": (NoteAttributeType.CONTINUOUS, [99999.0, 99998.0], None),
+            },
+            {
+                "col_a": (NoteAttributeType.CONTINUOUS, None, None),
+                "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
+                "col_c": (NoteAttributeType.CATEGORICAL, list(range(10_000)), None),
             },
         ],
-        ids=["categorical_only", "continuous_only"],
+        ids=["categorical_only", "continuous_only", "continuous_only_with_value_labels", "many_categories"],
     )
-    def test_classify_attributes(self, db_con: DuckDBPyConnection, input_dict: dict[str, tuple[str, list[str] | None]]):
+    def test_classify_attributes(
+        self, db_con: DuckDBPyConnection, input_dict: dict[str, tuple[str, list[str] | None, float | None]]
+    ):
         """Test the classify_attributes function."""
         rel, attr_col_meta = self.generate_input_data(db_con, input_dict)
         result = classify_attributes(rel, attr_col_meta)
-        for col, (expected_type, _) in input_dict.items():
-            assert result[col] == expected_type, "event attribute incorrectly classified"
+        for col, (expected_type, _, _) in input_dict.items():
+            assert result[col] == expected_type, f"event attribute {col} incorrectly classified"
 
 
 config_with_existing_time_col = SilverConfig(

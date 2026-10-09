@@ -93,10 +93,21 @@ class TestClassifyAttributes(TestData):
             {
                 "col_a": (NoteAttributeType.CONTINUOUS, None, None),
                 "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
+                "col_c": (NoteAttributeType.CATEGORICAL, list(range(1_000)), None),
+            },
+            {
+                "col_a": (NoteAttributeType.CONTINUOUS, None, None),
+                "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
                 "col_c": (NoteAttributeType.CATEGORICAL, list(range(10_000)), None),
             },
         ],
-        ids=["categorical_only", "continuous_only", "continuous_only_with_value_labels", "many_categories"],
+        ids=[
+            "categorical_only",
+            "continuous_only",
+            "continuous_only_with_value_labels",
+            "1k_categories",
+            "10k categories",
+        ],
     )
     def test_classify_attributes(
         self, db_con: DuckDBPyConnection, input_dict: dict[str, tuple[str, list[str] | None, float | None]]

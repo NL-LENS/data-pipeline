@@ -1,4 +1,4 @@
-""" "Build silver data.
+"""Build silver data.
 
 For approx_count_distinct, see
 - DuckDB implements https://arxiv.org/pdf/1702.01284, see
@@ -153,8 +153,8 @@ def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols
     return rel.order(f"{PERSON_COLNAME}, {TIME_COLNAME}")
 
 
-def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> dict[str, str]:
-    """Classify attributes as categorical or continuous.
+class AttributeClassifier:
+    """Classifier for event attributes.
 
     Arguments
     ---------
@@ -180,65 +180,85 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
         - categorical if the set of distinct values matches the set of
         declared categories
         - continuous otherwise
-
     """
-    unassigned_cols: set[str] = set()
-    cols_to_value_labels: dict[str, dict] = {}
-    cols_to_attr_type: dict[str, str] = {}
 
-    for col_meta in attr_col_meta:
-        if col_meta.value_labels is None:
-            cols_to_attr_type[col_meta.variable] = NoteAttributeType.CONTINUOUS
-            continue
-        unassigned_cols.add(col_meta.variable)
-        cols_to_value_labels[col_meta.variable] = col_meta.value_labels
+    def __init__(self, rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]):
+        self.rel = rel
+        self.attr_col_meta = attr_col_meta
+        self.unassigned_cols: set[str] = {meta.variable for meta in attr_col_meta}
+        self.cols_to_value_labels: dict[str, dict] = {}
+        self.cols_to_attr_type: dict[str, str] = {}
 
-    logger.debug("cols_to_attr_type: %s", cols_to_attr_type)
+    @property
+    def is_done(self) -> bool:
+        """If True, no unassigned columns are left."""
+        return len(self.unassigned_cols) == 0
 
-    if len(cols_to_value_labels) == 0:
-        return cols_to_attr_type
+    def run(self) -> dict[str, str]:
+        """Run the classification pipeline."""
+        self.assign_on_missing_value_labels()
+        if self.is_done:
+            return self.cols_to_attr_type
 
-    col_queries = [f"approx_count_distinct({col}) AS {col}" for col in cols_to_value_labels]
-    approx_distinct_rel = rel.aggregate(", ".join(col_queries)).execute()
+        self.assign_on_approx_distinct()
+        if self.is_done:
+            return self.cols_to_attr_type
 
-    for col, value_labels in cols_to_value_labels.items():
-        approx_distinct_count = approx_distinct_rel.select(col).fetchall()[0][0]
+        self.assign_on_exact_distinct()
+        if self.is_done:
+            return self.cols_to_attr_type
 
-        reference_cardinality = len(value_labels)
-        confidence_length = APPROX_COUNT_SIGMA * APPROX_SD * reference_cardinality
-        if approx_distinct_count <= reference_cardinality + confidence_length:
-            continue
-        cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
-        unassigned_cols.remove(col)
+        self.assign_remaining()
+        return self.cols_to_attr_type
 
-    logger.debug("cols_to_attr_type: %s", cols_to_attr_type)
+    def assign_on_missing_value_labels(self) -> None:
+        """Assign continuous the column has no value labels."""
+        for col_meta in self.attr_col_meta:
+            if col_meta.value_labels is None:
+                self.cols_to_attr_type[col_meta.variable] = NoteAttributeType.CONTINUOUS
+                self.unassigned_cols.remove(col_meta.variable)
+                continue
+            self.cols_to_value_labels[col_meta.variable] = col_meta.value_labels
+            logger.debug("cols_to_attr_type: %s", self.cols_to_attr_type)
 
-    if len(unassigned_cols) == 0:
-        return cols_to_attr_type
+    def assign_on_approx_distinct(self) -> None:
+        """Assign continuous if the approximate cardinality is high enough."""
+        col_queries = [f"approx_count_distinct({col}) AS {col}" for col in self.cols_to_value_labels]
+        approx_distinct_rel = self.rel.aggregate(", ".join(col_queries)).execute()
 
-    count_distincts = rel.aggregate(f"COUNT(DISTINCT COLUMNS({list(unassigned_cols)}))")
+        for col, value_labels in self.cols_to_value_labels.items():
+            approx_distinct_count = approx_distinct_rel.select(col).fetchall()[0][0]
 
-    for col in list(unassigned_cols):
-        n_distinct = count_distincts.select(col).fetchall()[0][0]
-        if n_distinct <= len(cols_to_value_labels[col]):
-            continue
-        cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
-        unassigned_cols.remove(col)
+            reference_cardinality = len(value_labels)
+            confidence_length = APPROX_COUNT_SIGMA * APPROX_SD * reference_cardinality
+            if approx_distinct_count <= reference_cardinality + confidence_length:
+                continue
+            self.cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
+            self.unassigned_cols.remove(col)
+            logger.debug("cols_to_attr_type: %s", self.cols_to_attr_type)
 
-    logger.debug("cols_to_attr_type: %s", cols_to_attr_type)
-    if len(unassigned_cols) == 0:
-        return cols_to_attr_type
+    def assign_on_exact_distinct(self) -> None:
+        """Assign continuous if the exact cardinality count."""
+        count_distincts = self.rel.aggregate(f"COUNT(DISTINCT COLUMNS({list(self.unassigned_cols)}))")
 
-    for remaining_col in list(unassigned_cols):
-        uniques = rel.select(remaining_col).distinct().fetchall()
-        uniques = [x[0] for x in uniques]
-        if set(uniques) == set(cols_to_value_labels[remaining_col].keys()):
-            cols_to_attr_type[remaining_col] = NoteAttributeType.CATEGORICAL
-            continue
-        cols_to_attr_type[remaining_col] = NoteAttributeType.CONTINUOUS
+        for col in list(self.unassigned_cols):
+            n_distinct = count_distincts.select(col).fetchall()[0][0]
+            if n_distinct <= len(self.cols_to_value_labels[col]):
+                continue
+            self.cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
+            self.unassigned_cols.remove(col)
+            logger.debug("cols_to_attr_type: %s", self.cols_to_attr_type)
 
-    logger.debug("cols_to_attr_type: %s", cols_to_attr_type)
-    return cols_to_attr_type
+    def assign_remaining(self) -> None:
+        """Assign remaining columns."""
+        for col in list(self.unassigned_cols):
+            uniques = self.rel.select(col).distinct().fetchall()
+            uniques = [x[0] for x in uniques]
+            if set(uniques) == set(self.cols_to_value_labels[col].keys()):
+                self.cols_to_attr_type[col] = NoteAttributeType.CATEGORICAL
+                continue
+            self.cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
+            logger.debug("cols_to_attr_type: %s", self.cols_to_attr_type)
 
 
 def replace_continuous_nulls(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> DuckDBPyRelation:
@@ -312,7 +332,8 @@ def convert_to_silver(
 
     # Use the full table to avoid any accidental misclassification
     full_table_rel = con.read_parquet(file_record.bronze_path)  # type: ignore[arg-type]
-    cols_to_attr_type = classify_attributes(full_table_rel, attribute_columns_meta)
+    classifier = AttributeClassifier(full_table_rel, attribute_columns_meta)
+    cols_to_attr_type = classifier.run()
 
     # TODO: this is also dangerous; use better approach w/o zipping
     continuous_col_meta = [

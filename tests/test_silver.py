@@ -14,9 +14,9 @@ from data_pipeline.schemas import SourceManifest
 from data_pipeline.silver import NOTE_COLNAME
 from data_pipeline.silver import PERSON_COLNAME
 from data_pipeline.silver import TIME_COLNAME
+from data_pipeline.silver import AttributeClassifier
 from data_pipeline.silver import NoteAttributeType
 from data_pipeline.silver import SilverConfig
-from data_pipeline.silver import classify_attributes
 from data_pipeline.silver import convert_to_silver
 from .conftest import TestData
 
@@ -114,7 +114,8 @@ class TestClassifyAttributes(TestData):
     ):
         """Test the classify_attributes function."""
         rel, attr_col_meta = self.generate_input_data(db_con, input_dict)
-        result = classify_attributes(rel, attr_col_meta)
+        classifier = AttributeClassifier(rel, attr_col_meta)
+        result = classifier.run()
         for col, (expected_type, _, _) in input_dict.items():
             assert result[col] == expected_type, f"event attribute {col} incorrectly classified"
 

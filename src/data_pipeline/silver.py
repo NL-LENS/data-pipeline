@@ -6,7 +6,10 @@ https://github.com/duckdb/duckdb/blob/2666f35707b758621f7b4e6e9694be35b41c10b5/s
 - Basic algorithm has ~= 2% error margin
     - https://en.wikipedia.org/wiki/HyperLogLog
     - https://algo.inria.fr/flajolet/Publications/FlFuGaMe07.pdf
-- See also: https://github.com/duckdb/duckdb/issues/20916
+- As reported in the discussion here https://github.com/duckdb/duckdb/issues/20916,
+the error varies depending on the registers used in the algorithm. For few registers (64), the
+theoretical error is 13%. In some tests, the implementation had an average error
+of 3%.
 """
 
 import logging
@@ -31,7 +34,7 @@ PERSON_COLNAME = "RINPERSOON"
 NOTE_COLNAME = "NOTE"
 
 APPROX_COUNT_SIGMA = 6
-APPROX_SD = 0.02
+APPROX_SD = 0.13
 
 
 class NoteAttributeType(StrEnum):
@@ -173,12 +176,13 @@ class AttributeClassifier:
         - continuous if the approximate count of unique
         values is more than :py:data:`~data_pipeline.silver.APPROX_COUNT_SIGMA`
         standard deviations of the reference cardinality. The standard deviation
-        is assumed to be 2%, based on theoretical variance bounds of the HyperLogLog
-        algorithm.
+        is assumed to be :py:data:`~data_pipeline.silver.APPROX_SD` of the
+        reference cardinality in the metadata, which is conservative.
         - if the exact count of unique values is above the number of declared
         categories.
         - categorical if the set of distinct values matches the set of
-        declared categories
+        declared categories. This assumes that all of the declared value
+        labels indeed appear in the data.
         - continuous otherwise
     """
 
@@ -219,6 +223,7 @@ class AttributeClassifier:
                 self.unassigned_cols.remove(col_meta.variable)
                 continue
             self.cols_to_value_labels[col_meta.variable] = col_meta.value_labels
+            # TODO: this seems to be called 2x?
             logger.debug("cols_to_attr_type: %s", self.cols_to_attr_type)
 
     def assign_on_approx_distinct(self) -> None:

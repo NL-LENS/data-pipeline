@@ -17,8 +17,18 @@ class TestData:
         return np.array(ids)
 
     def make_categorical(self, categories: list[str], probs: list[float] | None = None) -> np.ndarray:
-        """Make a categorical array."""
-        return self.rng.choice(categories, p=probs, size=self.sample_size)
+        """Make a categorical array.
+
+        Each category is guaranteed to be sampled at least once.
+        """
+        guaranteed = np.array(list(set(categories)))
+        remaining = self.sample_size - guaranteed.shape[0]
+        if remaining < 0:
+            msg = "Too many categories for this sample size."
+            raise RuntimeError(msg)
+
+        sampled = self.rng.choice(categories, p=probs, size=remaining)
+        return np.concatenate([guaranteed, sampled])
 
     def make_continuous(self) -> np.ndarray:
         """Make a continuous array."""

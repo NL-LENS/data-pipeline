@@ -93,6 +93,11 @@ class TestClassifyAttributes(TestData):
             {
                 "col_a": (NoteAttributeType.CONTINUOUS, None, None),
                 "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
+                "col_c": (NoteAttributeType.CATEGORICAL, list(range(1_00)), None),
+            },
+            {
+                "col_a": (NoteAttributeType.CONTINUOUS, None, None),
+                "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
                 "col_c": (NoteAttributeType.CATEGORICAL, list(range(1_000)), None),
             },
             {
@@ -105,6 +110,7 @@ class TestClassifyAttributes(TestData):
             "categorical_only",
             "continuous_only",
             "continuous_only_with_value_labels",
+            "100_categories",
             "1k_categories",
             "10k categories",
         ],

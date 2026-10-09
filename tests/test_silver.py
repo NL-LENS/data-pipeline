@@ -65,7 +65,7 @@ class TestClassifyAttributes(TestData):
                 source_path=Path("some/path"),
                 source_filename=Path("file.sav"),
                 original_variable="some_var",
-                readstat_type="str",
+                readstat_type="not_a_real_type",
                 description="",
             )
 
@@ -93,7 +93,7 @@ class TestClassifyAttributes(TestData):
             {
                 "col_a": (NoteAttributeType.CONTINUOUS, None, None),
                 "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
-                "col_c": (NoteAttributeType.CATEGORICAL, list(range(1_00)), None),
+                "col_c": (NoteAttributeType.CATEGORICAL, list(range(100)), None),
             },
             {
                 "col_a": (NoteAttributeType.CONTINUOUS, None, None),
@@ -105,6 +105,10 @@ class TestClassifyAttributes(TestData):
                 "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
                 "col_c": (NoteAttributeType.CATEGORICAL, list(range(10_000)), None),
             },
+            {
+                "col_a": (NoteAttributeType.CONTINUOUS, None, None),
+                "col_b": (NoteAttributeType.CONTINUOUS, list(range(10_000)), 0.5),
+            },
         ],
         ids=[
             "categorical_only",
@@ -112,7 +116,8 @@ class TestClassifyAttributes(TestData):
             "continuous_only_with_value_labels",
             "100_categories",
             "1k_categories",
-            "10k categories",
+            "10k_categories",
+            "continuous_with_many_value_labels",
         ],
     )
     def test_classify_attributes(
@@ -185,6 +190,7 @@ class TestSilver(TestData):
             "CONTINUOUS_ATTR2": self.make_continuous(),
             "CAT_ATTR1": self.make_categorical(["a", "b", "c", "missing"], [0.1, 0.6, 0.2, 0.1]),
             "CAT_ATTR2": self.make_categorical(["x", "y", "missing"], [0.2, 0.75, 0.05]),
+            "CONTINUOUS_ATTR3_NO_MISSING": self.make_continuous(),
         }
 
         data_dict["CONTINUOUS_ATTR1"] = self.corrupt(
@@ -315,6 +321,16 @@ class TestSilver(TestData):
             value_labels={99998: "missing", 99997: "also_missing"},
         )
 
+        continuous3_meta = SavColumnMeta(
+            source_path=source_path,
+            source_filename=source_filename,
+            variable="CONTINUOUS_ATTR3_NO_MISSING",
+            original_variable="continuous_attr3",
+            readstat_type="double",
+            description="",
+            value_labels=None,
+        )
+
         cat1_meta = SavColumnMeta(
             source_path=source_path,
             source_filename=source_filename,
@@ -348,6 +364,7 @@ class TestSilver(TestData):
             continuous2_meta,
             cat1_meta,
             cat2_meta,
+            continuous3_meta,
         ]
         table.insert_many(column_list)
 
@@ -399,7 +416,13 @@ class TestSilver(TestData):
 
         note_fields_and_types = rel.select(NOTE_COLNAME).types[0].children
         note_fields = [x[0] for x in note_fields_and_types]
-        expected_fields = {"CONTINUOUS_ATTR1", "CONTINUOUS_ATTR2", "CAT_ATTR1", "CAT_ATTR2"}
+        expected_fields = {
+            "CONTINUOUS_ATTR1",
+            "CONTINUOUS_ATTR2",
+            "CONTINUOUS_ATTR3_NO_MISSING",
+            "CAT_ATTR1",
+            "CAT_ATTR2",
+        }
         assert expected_fields == set(note_fields), "Note has incorrect fields."
 
         for col in ["CONTINUOUS_ATTR1", "CONTINUOUS_ATTR2"]:
@@ -407,5 +430,11 @@ class TestSilver(TestData):
                 rel.select(f"CASE WHEN NOTE.{col} IS NULL THEN 1 ELSE 0 END AS X").aggregate("mean(X)").fetchall()[0][0]
             )
             assert avg_null > 0, "Missing values in continuous variables not coded as NULL."
+
+        for col in ["CONTINUOUS_ATTR3_NO_MISSING"]:
+            avg_null = (
+                rel.select(f"CASE WHEN NOTE.{col} IS NULL THEN 1 ELSE 0 END AS X").aggregate("mean(X)").fetchall()[0][0]
+            )
+            assert avg_null == 0, "Missing values added when they should not be."
 
         con.close()

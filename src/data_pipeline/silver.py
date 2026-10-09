@@ -118,44 +118,6 @@ class SilverConfig:
         return self.event_time_col is not None
 
 
-def define_event_time_col(rel: DuckDBPyRelation, config: SilverConfig, file_record: FileMetaRecord) -> DuckDBPyRelation:
-    """Define the event-time column of data in a relation."""
-    if config.has_event_col:
-        rel = rel.select(f"""* EXCLUDE({config.event_time_col}),
-                         try_strptime({config.event_time_col}, '{config.event_time_col_fmt}')::DATE
-                         AS {config.event_time_col}""")
-        rel = rel.filter(f"{config.event_time_col} IS NOT NULL")
-    else:
-        # TODO: task for config validation
-        year = file_record.ref_period.year  # type: ignore[union-attr]
-        year_col = f"{year}-{config.apply_event_time}"
-        rel = rel.select(f"""*, '{year_col}'::DATE AS {TIME_COLNAME}""")
-
-    return rel
-
-
-def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols: list[str]) -> DuckDBPyRelation:
-    """Transform a relation into the event-table format.
-
-    Arguments
-    ---------
-    rel:
-        Relation with the table to process.
-    config:
-        The configuration class.
-    attribute_cols:
-        Column names of event attributes.
-    """
-    struct_query_inputs = [f"{col} := {col}" for col in attribute_cols]
-    struct_query = ", ".join(struct_query_inputs)
-    time_colname_query = f"{config.event_time_col} AS {TIME_COLNAME}" if config.has_event_col else TIME_COLNAME
-    rel = rel.select(f"""{config.rinpersoon_col} AS {PERSON_COLNAME},
-                     {time_colname_query},
-                     struct_pack({struct_query}) AS {NOTE_COLNAME}
-                     """)
-    return rel.order(f"{PERSON_COLNAME}, {TIME_COLNAME}")
-
-
 class AttributeClassifier:
     """Classifier for event attributes.
 
@@ -223,8 +185,6 @@ class AttributeClassifier:
                 self.unassigned_cols.remove(col_meta.variable)
                 continue
             self.cols_to_value_labels[col_meta.variable] = col_meta.value_labels
-            # TODO: this seems to be called 2x?
-            logger.debug("cols_to_attr_type: %s", self.cols_to_attr_type)
 
     def assign_on_approx_distinct(self) -> None:
         """Assign continuous if the approximate cardinality is high enough."""
@@ -240,7 +200,6 @@ class AttributeClassifier:
                 continue
             self.cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
             self.unassigned_cols.remove(col)
-            logger.debug("cols_to_attr_type: %s", self.cols_to_attr_type)
 
     def assign_on_exact_distinct(self) -> None:
         """Assign continuous if the exact cardinality count."""
@@ -252,7 +211,6 @@ class AttributeClassifier:
                 continue
             self.cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
             self.unassigned_cols.remove(col)
-            logger.debug("cols_to_attr_type: %s", self.cols_to_attr_type)
 
     def assign_remaining(self) -> None:
         """Assign remaining columns."""
@@ -262,12 +220,53 @@ class AttributeClassifier:
             if set(uniques) == set(self.cols_to_value_labels[col].keys()):
                 self.cols_to_attr_type[col] = NoteAttributeType.CATEGORICAL
                 continue
+            logger.info("Residual column %s classified as %s.", col, NoteAttributeType.CONTINUOUS)
             self.cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
-            logger.debug("cols_to_attr_type: %s", self.cols_to_attr_type)
+
+
+def define_event_time_col(rel: DuckDBPyRelation, config: SilverConfig, file_record: FileMetaRecord) -> DuckDBPyRelation:
+    """Define the event-time column of data in a relation."""
+    if config.has_event_col:
+        rel = rel.select(f"""* EXCLUDE({config.event_time_col}),
+                         try_strptime({config.event_time_col}, '{config.event_time_col_fmt}')::DATE
+                         AS {config.event_time_col}""")
+        rel = rel.filter(f"{config.event_time_col} IS NOT NULL")
+    else:
+        # TODO: task for config validation
+        year = file_record.ref_period.year  # type: ignore[union-attr]
+        year_col = f"{year}-{config.apply_event_time}"
+        rel = rel.select(f"""*, '{year_col}'::DATE AS {TIME_COLNAME}""")
+
+    return rel
+
+
+def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols: list[str]) -> DuckDBPyRelation:
+    """Transform a relation into the event-table format.
+
+    Arguments
+    ---------
+    rel:
+        Relation with the table to process.
+    config:
+        The configuration class.
+    attribute_cols:
+        Column names of event attributes.
+    """
+    struct_query_inputs = [f"{col} := {col}" for col in attribute_cols]
+    struct_query = ", ".join(struct_query_inputs)
+    time_colname_query = f"{config.event_time_col} AS {TIME_COLNAME}" if config.has_event_col else TIME_COLNAME
+    rel = rel.select(f"""{config.rinpersoon_col} AS {PERSON_COLNAME},
+                     {time_colname_query},
+                     struct_pack({struct_query}) AS {NOTE_COLNAME}
+                     """)
+    return rel.order(f"{PERSON_COLNAME}, {TIME_COLNAME}")
 
 
 def replace_continuous_nulls(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> DuckDBPyRelation:
     """Replace NULLs as per metadata and cast to DOUBLE.
+
+    Assumes that the column values as well as the declared value labels
+    in the metadata are castable to float.
 
     Arguments
     ---------
@@ -275,6 +274,13 @@ def replace_continuous_nulls(rel: DuckDBPyRelation, attr_col_meta: list[SavColum
         Relation with the data to operate on.
     attr_col_meta:
         Metadata of columns to process.
+
+    Raises
+    ------
+    ValueError:
+        If value labels of column metadata are not castable to float.
+    duckdb.BinderException:
+        If the column is non-numeric but the column value label keys are float.
     """
     for col_meta in attr_col_meta:
         attr_name = col_meta.variable
@@ -284,6 +290,8 @@ def replace_continuous_nulls(rel: DuckDBPyRelation, attr_col_meta: list[SavColum
 
         missing_values = [float(x) for x in col_meta.value_labels]
 
+        # According to Kimi, the IN statement here fails if
+        # missing_values is float but the column attr_name is non-numeric.
         rel = rel.select(f"""
            * EXCLUDE {attr_name},
             CASE WHEN
@@ -340,11 +348,8 @@ def convert_to_silver(
     classifier = AttributeClassifier(full_table_rel, attribute_columns_meta)
     cols_to_attr_type = classifier.run()
 
-    # TODO: this is also dangerous; use better approach w/o zipping
     continuous_col_meta = [
-        col_meta
-        for col_meta, (col_name, type_) in zip(attribute_columns_meta, cols_to_attr_type.items(), strict=True)
-        if type_ == NoteAttributeType.CONTINUOUS
+        m for m in attribute_columns_meta if cols_to_attr_type[m.variable] == NoteAttributeType.CONTINUOUS
     ]
     rel = replace_continuous_nulls(rel, continuous_col_meta)
 

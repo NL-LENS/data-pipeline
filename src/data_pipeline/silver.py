@@ -1,3 +1,14 @@
+""" "Build silver data.
+
+For approx_count_distinct, see
+- DuckDB implements https://arxiv.org/pdf/1702.01284, see
+https://github.com/duckdb/duckdb/blob/2666f35707b758621f7b4e6e9694be35b41c10b5/src/include/duckdb/common/types/hyperloglog.hpp#L25
+- Basic algorithm has ~= 2% error margin
+    - https://en.wikipedia.org/wiki/HyperLogLog
+    - https://algo.inria.fr/flajolet/Publications/FlFuGaMe07.pdf
+- See also: https://github.com/duckdb/duckdb/issues/20916
+"""
+
 import logging
 from dataclasses import dataclass
 from datetime import UTC
@@ -19,8 +30,8 @@ TIME_COLNAME = "DATE"
 PERSON_COLNAME = "RINPERSOON"
 NOTE_COLNAME = "NOTE"
 
-#: Buffer multiplier for approximate distinct-count classification.
-APPROX_COUNT_BUFFER = 10
+APPROX_COUNT_SIGMA = 6
+APPROX_SD = 0.02
 
 
 class NoteAttributeType(StrEnum):
@@ -159,10 +170,12 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
 
     In practice, attributes are sequentially classified as:
         - continuous if their metadata has no value label
-        - continuous if either the approximate count of unique
-        values is more than :py:data:`~data_pipeline.silver.APPROX_COUNT_BUFFER`
-        times the number of declared categories, or
-        if the exact count of unique values is above the number of declared
+        - continuous if the approximate count of unique
+        values is more than :py:data:`~data_pipeline.silver.APPROX_COUNT_SIGMA`
+        standard deviations of the reference cardinality. The standard deviation
+        is assumed to be 2%, based on theoretical variance bounds of the HyperLogLog
+        algorithm.
+        - if the exact count of unique values is above the number of declared
         categories.
         - categorical if the set of distinct values matches the set of
         declared categories
@@ -180,6 +193,8 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
         unassigned_cols.add(col_meta.variable)
         cols_to_value_labels[col_meta.variable] = col_meta.value_labels
 
+    logger.debug("cols_to_attr_type: %s", cols_to_attr_type)
+
     if len(cols_to_value_labels) == 0:
         return cols_to_attr_type
 
@@ -188,10 +203,15 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
 
     for col, value_labels in cols_to_value_labels.items():
         approx_distinct_count = approx_distinct_rel.select(col).fetchall()[0][0]
-        if approx_distinct_count <= APPROX_COUNT_BUFFER * len(value_labels):
+
+        reference_cardinality = len(value_labels)
+        confidence_length = APPROX_COUNT_SIGMA * APPROX_SD * reference_cardinality
+        if approx_distinct_count <= reference_cardinality + confidence_length:
             continue
         cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
         unassigned_cols.remove(col)
+
+    logger.debug("cols_to_attr_type: %s", cols_to_attr_type)
 
     if len(unassigned_cols) == 0:
         return cols_to_attr_type
@@ -205,6 +225,7 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
         cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
         unassigned_cols.remove(col)
 
+    logger.debug("cols_to_attr_type: %s", cols_to_attr_type)
     if len(unassigned_cols) == 0:
         return cols_to_attr_type
 
@@ -216,6 +237,7 @@ def classify_attributes(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta
             continue
         cols_to_attr_type[remaining_col] = NoteAttributeType.CONTINUOUS
 
+    logger.debug("cols_to_attr_type: %s", cols_to_attr_type)
     return cols_to_attr_type
 
 

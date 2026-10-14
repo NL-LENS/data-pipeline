@@ -30,6 +30,19 @@ is not part of the database, but stored in parquet files.
  datasets in a registry data project, and provides information relevant for
  data processing at various stages.
 
+### Configuration files
+
+`configs/silver_config.yaml` tells the silver pipeline how to turn each bronze dataset into events. It has one entry per dataset under `datasets:`, keyed by the
+dataset name (e.g. `SPOLISBUS`):
+
+| Key | Meaning |
+|---|---|
+| `CUMULATIVE` | `true` if each release contains the full history (so only the latest one is needed), `false` if each release is a separate snapshot |
+| `PRIMARY_IDS` | Columns that identify the unit an event belongs to (e.g. `RINPERSOON`, `RINPERSOONS`) |
+| `SECONDARY_IDS` | Other ID columns kept as event attributes (e.g. the related person in network tables) |
+| `TIME_VARIABLES` | The event time: either a date column, or a fixed reference date (peilmoment) written as `"MM-DD"` and combined with the release year.  |
+
+
 
 ## Development setup
 
@@ -51,3 +64,6 @@ act -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest -W .github/workflows
 cat .ci_log.txt | grep Job # see status of each job run
 rm -rf .ci_log.txt
 ```
+
+
+

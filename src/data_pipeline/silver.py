@@ -33,7 +33,7 @@ TIME_COLNAME = "DATE"
 PERSON_COLNAME = "RINPERSOON"
 NOTE_COLNAME = "NOTE"
 
-APPROX_COUNT_SIGMA = 6
+N_SIGMA = 6
 APPROX_SD = 0.13
 
 
@@ -136,7 +136,7 @@ class AttributeClassifier:
     In practice, attributes are sequentially classified as:
         - continuous if their metadata has no value label
         - continuous if the approximate count of unique
-        values is more than :py:data:`~data_pipeline.silver.APPROX_COUNT_SIGMA`
+        values is more than :py:data:`~data_pipeline.silver.N_SIGMA`
         standard deviations of the reference cardinality. The standard deviation
         is assumed to be :py:data:`~data_pipeline.silver.APPROX_SD` of the
         reference cardinality in the metadata, which is conservative.
@@ -195,7 +195,7 @@ class AttributeClassifier:
             approx_distinct_count = approx_distinct_rel.select(col).fetchall()[0][0]
 
             reference_cardinality = len(value_labels)
-            confidence_length = APPROX_COUNT_SIGMA * APPROX_SD * reference_cardinality
+            confidence_length = N_SIGMA * APPROX_SD * reference_cardinality
             if approx_distinct_count <= reference_cardinality + confidence_length:
                 continue
             self.cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS

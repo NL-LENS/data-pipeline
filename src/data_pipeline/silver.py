@@ -302,6 +302,22 @@ def replace_continuous_nulls(rel: DuckDBPyRelation, attr_col_meta: list[SavColum
     return rel
 
 
+def convert_nans_to_null(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> DuckDBPyRelation:
+    """Convert NaNs in continuous columns to NULL."""
+    for col_meta in attr_col_meta:
+        attr_name = col_meta.variable
+
+        rel = rel.select(f"""
+           * EXCLUDE {attr_name},
+            CASE WHEN
+               isnan({attr_name}) THEN NULL
+               ELSE {attr_name}
+            END AS {attr_name}
+        """)
+
+    return rel
+
+
 def convert_to_silver(
     source_manifest: SourceManifest, source_path: Path, source_filename: Path, dest_path: Path, config: SilverConfig
 ) -> SilverMetaRecord:
@@ -352,7 +368,7 @@ def convert_to_silver(
         m for m in attribute_columns_meta if cols_to_attr_type[m.variable] == NoteAttributeType.CONTINUOUS
     ]
     rel = replace_continuous_nulls(rel, continuous_col_meta)
-
+    rel = convert_nans_to_null(rel, continuous_col_meta)
     rel = make_event_table(rel, config, list(cols_to_attr_type.keys()))
 
     rel.to_parquet(str(dest_path))

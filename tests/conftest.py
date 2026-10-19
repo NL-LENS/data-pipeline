@@ -1,5 +1,6 @@
 from pathlib import Path
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 
@@ -29,6 +30,14 @@ class TestData:
 
         sampled = self.rng.choice(categories, p=probs, size=remaining)
         return np.concatenate([guaranteed, sampled])
+
+    def make_null_col(self, dtype: npt.DTypeLike = np.float64) -> np.ndarray:
+        """Create a column of NULLs.
+
+        Represents columns that were not available when the data were collected
+        and were added later to the schema of a design.
+        """
+        return np.array([None] * self.sample_size, dtype=dtype)
 
     def make_continuous(self) -> np.ndarray:
         """Make a continuous array."""

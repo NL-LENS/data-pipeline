@@ -109,6 +109,7 @@ class TestClassifyAttributes(TestData):
                 "col_a": (NoteAttributeType.CONTINUOUS, None, None),
                 "col_b": (NoteAttributeType.CONTINUOUS, list(range(10_000)), 0.5),
             },
+            {"col_a": (NoteAttributeType.CONTINUOUS, None, None), "col_b": (NoteAttributeType.CONTINUOUS, [None], 1)},
         ],
         ids=[
             "categorical_only",
@@ -118,6 +119,7 @@ class TestClassifyAttributes(TestData):
             "1k_categories",
             "10k_categories",
             "continuous_with_many_value_labels",
+            "continuous_all_missing",
         ],
     )
     def test_classify_attributes(
@@ -191,6 +193,7 @@ class TestSilver(TestData):
             "CAT_ATTR1": self.make_categorical(["a", "b", "c", "missing"], [0.1, 0.6, 0.2, 0.1]),
             "CAT_ATTR2": self.make_categorical(["x", "y", "missing"], [0.2, 0.75, 0.05]),
             "CONTINUOUS_ATTR3_NO_MISSING": self.make_continuous(),
+            "NULL_COL": self.make_null_col(),
         }
 
         data_dict["CONTINUOUS_ATTR1"] = self.corrupt(
@@ -351,6 +354,16 @@ class TestSilver(TestData):
             value_labels={"x": "means_x", "y": "means_y", "missing": "missing"},
         )
 
+        null_col_meta = SavColumnMeta(
+            source_path=source_path,
+            source_filename=source_filename,
+            variable="NULL_COL",
+            original_variable="null_col",
+            readstat_type="str",
+            description="",
+            value_labels=None,
+        )
+
         table = SavMetaTable(db_file=db_file)
         table.create_from_record(rinpersoon_meta)
 
@@ -365,6 +378,7 @@ class TestSilver(TestData):
             cat1_meta,
             cat2_meta,
             continuous3_meta,
+            null_col_meta,
         ]
         table.insert_many(column_list)
 
@@ -420,21 +434,23 @@ class TestSilver(TestData):
             "CONTINUOUS_ATTR1",
             "CONTINUOUS_ATTR2",
             "CONTINUOUS_ATTR3_NO_MISSING",
+            "NULL_COL",
             "CAT_ATTR1",
             "CAT_ATTR2",
         }
         assert expected_fields == set(note_fields), "Note has incorrect fields."
 
-        for col in ["CONTINUOUS_ATTR1", "CONTINUOUS_ATTR2"]:
-            avg_null = (
-                rel.select(f"CASE WHEN NOTE.{col} IS NULL THEN 1 ELSE 0 END AS X").aggregate("mean(X)").fetchall()[0][0]
-            )
-            assert avg_null > 0, "Missing values in continuous variables not coded as NULL."
+        continuous_cols_missing_frac = {
+            "CONTINUOUS_ATTR1": lambda x: x > 0,
+            "CONTINUOUS_ATTR2": lambda x: x > 0,
+            "CONTINUOUS_ATTR3_NO_MISSING": lambda x: x == 0,
+            "NULL_COL": lambda x: x == 1,
+        }
 
-        for col in ["CONTINUOUS_ATTR3_NO_MISSING"]:
+        for col, comparison_func in continuous_cols_missing_frac.items():
             avg_null = (
                 rel.select(f"CASE WHEN NOTE.{col} IS NULL THEN 1 ELSE 0 END AS X").aggregate("mean(X)").fetchall()[0][0]
             )
-            assert avg_null == 0, "Missing values added when they should not be."
+            assert comparison_func(avg_null), f"Missing values incorrectly coded for {col}"
 
         con.close()

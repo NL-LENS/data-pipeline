@@ -88,7 +88,7 @@ class TestBronze(TestData):
             "date": self.random_dates().astype(str),  # sav files store dates as str
             "wage": self.rng.random(size=self.sample_size).astype(np.float64),
             "sector": self.make_categorical(["1", "2", "3"], [0.2, 0.4, 0.4]),
-            "null_col": np.array([None] * self.sample_size, dtype=np.float64),
+            "null_col": self.make_null_col(),
         }
         # NOTE/TODO: types when writing to sav are complicated
         # See here https://github.com/Roche/pyreadstat#variable-type-conversion

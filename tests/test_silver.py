@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
@@ -29,34 +30,44 @@ def db_con() -> Generator[duckdb.DuckDBPyConnection]:
     con.close()
 
 
+@dataclass
+class ColumnConfig:
+    """Configuration for creating one column of test data."""
+
+    attribute_type: NoteAttributeType
+    value_label_keys: list[str | float | int | None] | None
+    frac_to_corrupt: float | None = None
+
+
 class TestClassifyAttributes(TestData):
     """Test the attribute classification."""
 
     def generate_input_data(
-        self, con: DuckDBPyConnection, input_dict: dict[str, tuple[str, list[str] | None, float | None]]
+        self, con: DuckDBPyConnection, input_dict: dict[str, ColumnConfig]
     ) -> tuple[duckdb.DuckDBPyRelation, list[SavColumnMeta]]:
         """Generate input data along metadata."""
         data_dict = {}
         metadata = []
-        for col, (attribute_type, value_label_keys, user_frac_to_corrupt) in input_dict.items():
-            if attribute_type == NoteAttributeType.CATEGORICAL:
-                if value_label_keys is None:
+        for col, config in input_dict.items():
+            if config.attribute_type == NoteAttributeType.CATEGORICAL:
+                if config.value_label_keys is None:
                     msg = "For categorical columns, value_label_keys are necessary"
                     raise RuntimeError(msg)
-                data_dict[col] = self.make_categorical(value_label_keys)
-            elif attribute_type == NoteAttributeType.CONTINUOUS:
+                data_dict[col] = self.make_categorical(config.value_label_keys)
+
+            elif config.attribute_type == NoteAttributeType.CONTINUOUS:
                 col_array = self.rng.random(size=self.sample_size).astype(np.float64)
-                if value_label_keys:
-                    frac_to_corrupt = 0.05 if user_frac_to_corrupt is None else user_frac_to_corrupt
+                if config.value_label_keys:
+                    frac_to_corrupt = 0.05 if config.frac_to_corrupt is None else config.frac_to_corrupt
                     col_array = self.corrupt(
-                        col_array, inject=value_label_keys, size=int(frac_to_corrupt * self.sample_size)
+                        col_array, inject=config.value_label_keys, size=int(frac_to_corrupt * self.sample_size)
                     )
 
                 data_dict[col] = col_array
 
             current_labels = None
-            if value_label_keys:
-                current_labels = dict.fromkeys(value_label_keys, "")  # label value unused in this function
+            if config.value_label_keys:
+                current_labels = dict.fromkeys(config.value_label_keys, "")  # label value unused in this function
 
             meta = SavColumnMeta(
                 variable=col,
@@ -79,37 +90,40 @@ class TestClassifyAttributes(TestData):
         ("input_dict"),
         [
             {
-                "col_a": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
-                "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
+                "col_a": ColumnConfig(NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"]),
+                "col_b": ColumnConfig(NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"]),
             },
             {
-                "col_a": (NoteAttributeType.CONTINUOUS, None, None),
-                "col_b": (NoteAttributeType.CONTINUOUS, None, None),
+                "col_a": ColumnConfig(NoteAttributeType.CONTINUOUS, None),
+                "col_b": ColumnConfig(NoteAttributeType.CONTINUOUS, None),
             },
             {
-                "col_a": (NoteAttributeType.CONTINUOUS, None, None),
-                "col_b": (NoteAttributeType.CONTINUOUS, [99999.0, 99998.0], None),
+                "col_a": ColumnConfig(NoteAttributeType.CONTINUOUS, None),
+                "col_b": ColumnConfig(NoteAttributeType.CONTINUOUS, [99999.0, 99998.0]),
             },
             {
-                "col_a": (NoteAttributeType.CONTINUOUS, None, None),
-                "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
-                "col_c": (NoteAttributeType.CATEGORICAL, list(range(100)), None),
+                "col_a": ColumnConfig(NoteAttributeType.CONTINUOUS, None),
+                "col_b": ColumnConfig(NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"]),
+                "col_c": ColumnConfig(NoteAttributeType.CATEGORICAL, list(range(100))),
             },
             {
-                "col_a": (NoteAttributeType.CONTINUOUS, None, None),
-                "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
-                "col_c": (NoteAttributeType.CATEGORICAL, list(range(1_000)), None),
+                "col_a": ColumnConfig(NoteAttributeType.CONTINUOUS, None),
+                "col_b": ColumnConfig(NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"]),
+                "col_c": ColumnConfig(NoteAttributeType.CATEGORICAL, list(range(1_000))),
             },
             {
-                "col_a": (NoteAttributeType.CONTINUOUS, None, None),
-                "col_b": (NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"], None),
-                "col_c": (NoteAttributeType.CATEGORICAL, list(range(10_000)), None),
+                "col_a": ColumnConfig(NoteAttributeType.CONTINUOUS, None),
+                "col_b": ColumnConfig(NoteAttributeType.CATEGORICAL, ["class_a", "class_b", "missing"]),
+                "col_c": ColumnConfig(NoteAttributeType.CATEGORICAL, list(range(10_000))),
             },
             {
-                "col_a": (NoteAttributeType.CONTINUOUS, None, None),
-                "col_b": (NoteAttributeType.CONTINUOUS, list(range(10_000)), 0.5),
+                "col_a": ColumnConfig(NoteAttributeType.CONTINUOUS, None),
+                "col_b": ColumnConfig(NoteAttributeType.CONTINUOUS, list(range(10_000)), 0.5),
             },
-            {"col_a": (NoteAttributeType.CONTINUOUS, None, None), "col_b": (NoteAttributeType.CONTINUOUS, [None], 1)},
+            {
+                "col_a": ColumnConfig(NoteAttributeType.CONTINUOUS, None),
+                "col_b": ColumnConfig(NoteAttributeType.CONTINUOUS, [None], 1),
+            },
         ],
         ids=[
             "categorical_only",
@@ -122,14 +136,13 @@ class TestClassifyAttributes(TestData):
             "continuous_all_missing",
         ],
     )
-    def test_classify_attributes(
-        self, db_con: DuckDBPyConnection, input_dict: dict[str, tuple[str, list[str] | None, float | None]]
-    ):
+    def test_classify_attributes(self, db_con: DuckDBPyConnection, input_dict: dict[str, ColumnConfig]):
         """Test the classify_attributes function."""
         rel, attr_col_meta = self.generate_input_data(db_con, input_dict)
         classifier = AttributeClassifier(rel, attr_col_meta)
         result = classifier.run()
-        for col, (expected_type, _, _) in input_dict.items():
+        for col, config in input_dict.items():
+            expected_type = config.attribute_type
             assert result[col] == expected_type, f"event attribute {col} incorrectly classified"
 
 

@@ -353,12 +353,60 @@ def convert_to_silver(
 ) -> SilverMetaRecord:
     """Convert bronze data to silver.
 
+    The resulting parquet file has the following schema:
+
+    .. list-table::
+       :header-rows: 1
+
+       * - Column
+         - DuckDB type
+         - Description
+       * - ``RINPERSOON``
+         - ``BIGINT``
+         - Person identifier.
+       * - ``DATE``
+         - ``DATE``
+         - Event date.
+       * - ``NOTE``
+         - ``STRUCT``
+         - Event attributes; field names and types are inherited from the
+           bronze columns (continuous fields are ``DOUBLE``).
+
+    For example, a row may look like
+    ``{RINPERSOON: 12345, DATE: 2025-06-04, NOTE: {attr1: 10, attr2: "Amsterdam"}}``.
+
+    The mapping of columns in bronze to columns in silver is defined
+    in the SilverConfig.
+    No column for the event type is created; this should be specified
+    in the location where the file is stored, using hive partitioning.
+
+    The function processes data as follows:
+        1. Drops rows based on RINPERSOONS = R.
+        2. Drops columns per the column config.
+        3. All columns that are not dropped, not person/time identifier, become
+        NOTE attributes. The type of the attribute -- continuous or categorical --
+        is inferred from the column's distribution and cardinality, compared to
+        the one declared in the metadata.
+        See :py:data:`~data_pipeline.silver.AttributeClassifier`.
+        4. In continuous NOTE attributes, declared missing values are converted to NULL.
+
     Arguments
     ---------
-    source_path: path to the original .sav file.
-    source_filename: name of the original .sav file.
-    db_file: path to the database file with the metadata.
-    dest_path: Path where to save the silver file.
+    source_manifest:
+        Manifest with the source metadata.
+    source_path:
+        Path to the original .sav file.
+    source_filename:
+        Name of the original .sav file.
+    dest_path:
+        Path where to save the silver file.
+    config:
+        The silver processing configuration.
+
+    Returns
+    -------
+    SilverMetaRecord
+        Metadata record for the created silver file.
 
     Notes
     -----

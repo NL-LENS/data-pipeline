@@ -331,7 +331,7 @@ def cleanse_continuous(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]
             logger.debug("No value labels declared for %s", attr_name)
             if rel.select(attr_name).types[0] not in DUCKDB_NUMERIC_TYPES:
                 logger.debug("Casting %s to FLOAT", attr_name)
-                rel = rel.select(f"* EXCLUDE {attr_name}, {attr_name}::FLOAT AS {attr_name}")
+                rel = rel.select(f"* EXCLUDE {attr_name}, TRY_CAST({attr_name} AS FLOAT) AS {attr_name}")
             continue
 
         missing_values = [float(x) for x in col_meta.value_labels]

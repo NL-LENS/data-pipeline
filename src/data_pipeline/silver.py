@@ -291,8 +291,8 @@ def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols
     return rel.order(f"{PERSON_COLNAME}, {TIME_COLNAME}")
 
 
-def replace_continuous_nulls(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> DuckDBPyRelation:
-    """Replace NULLs as per metadata and cast to DOUBLE.
+def cleanse_continuous(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> DuckDBPyRelation:
+    """Cast to FLOAT and replace NULLs as per metadata if required.
 
     Assumes that the column values as well as the declared value labels
     in the metadata are castable to float.
@@ -316,8 +316,8 @@ def replace_continuous_nulls(rel: DuckDBPyRelation, attr_col_meta: list[SavColum
         if col_meta.value_labels is None:
             logger.debug("No value labels declared for %s", attr_name)
             if rel.select(attr_name).types[0] not in DUCKDB_NUMERIC_TYPES:
-                logger.debug("Casting %s to DOUBLE", attr_name)
-                rel = rel.select(f"* EXCLUDE {attr_name}, {attr_name}::DOUBLE AS {attr_name}")
+                logger.debug("Casting %s to FLOAT", attr_name)
+                rel = rel.select(f"* EXCLUDE {attr_name}, {attr_name}::FLOAT AS {attr_name}")
             continue
 
         missing_values = [float(x) for x in col_meta.value_labels]
@@ -327,8 +327,8 @@ def replace_continuous_nulls(rel: DuckDBPyRelation, attr_col_meta: list[SavColum
         rel = rel.select(f"""
            * EXCLUDE {attr_name},
             CASE WHEN
-               {attr_name} IN {missing_values} THEN NULL::DOUBLE
-               ELSE {attr_name}::DOUBLE
+               {attr_name} IN {missing_values} THEN NULL::FLOAT
+               ELSE {attr_name}::FLOAT
             END AS {attr_name}
         """)
     return rel
@@ -372,7 +372,7 @@ def convert_to_silver(
        * - ``NOTE``
          - ``STRUCT``
          - Event attributes; field names and types are inherited from the
-           bronze columns (continuous fields are ``DOUBLE``).
+           bronze columns (continuous fields are ``FLOAT``).
 
     For example, a row may look like
     ``{RINPERSOON: 12345, DATE: 2025-06-04, NOTE: {attr1: 10, attr2: "Amsterdam"}}``.
@@ -447,7 +447,7 @@ def convert_to_silver(
     continuous_col_meta = [
         m for m in attribute_columns_meta if cols_to_attr_type[m.variable] == NoteAttributeType.CONTINUOUS
     ]
-    rel = replace_continuous_nulls(rel, continuous_col_meta)
+    rel = cleanse_continuous(rel, continuous_col_meta)
     rel = convert_nans_to_null(rel, continuous_col_meta)
     rel = make_event_table(rel, config, list(cols_to_attr_type.keys()))
 

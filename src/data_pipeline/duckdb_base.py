@@ -65,6 +65,21 @@ DuckDBBigInt = NewType("DuckDBBigInt", int)
 DuckDBDouble = NewType("DuckDBDouble", float)
 # UBIGINT, UINTEGER omitted: unclear if necessary
 
+DUCKDB_NUMERIC_TYPES = [
+    "TINYINT",
+    "SMALLINT",
+    "INTEGER",
+    "BIGINT",
+    "HUGEINT",
+    "UTINYINT",
+    "USMALLINT",
+    "UINTEGER",
+    "UBIGINT",
+    "UHUGEINT",
+    "FLOAT",
+    "DOUBLE",
+]
+
 
 def cast_union_types(field_type_arguments: tuple[Any, ...], value: Any) -> Any:  # noqa: ANN401
     """Cast `value` to permissible types according to declared field_type_arguments.

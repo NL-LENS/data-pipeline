@@ -21,6 +21,7 @@ from itertools import filterfalse
 from pathlib import Path
 import duckdb
 from _duckdb import DuckDBPyRelation
+from data_pipeline.duckdb_base import DUCKDB_NUMERIC_TYPES
 from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SavColumnMeta
 from data_pipeline.schemas import SavMetaTable
@@ -140,11 +141,9 @@ class AttributeClassifier:
         standard deviations of the reference cardinality. The standard deviation
         is assumed to be :py:data:`~data_pipeline.silver.APPROX_SD` of the
         reference cardinality in the metadata, which is conservative.
-        - if the exact count of unique values is above the number of declared
-        categories.
-        - categorical if the set of distinct values matches the set of
-        declared categories. This assumes that all of the declared value
-        labels indeed appear in the data.
+        - continuous if the column is of numeric type and has all NaNs.
+        - categorical if the exact count of unique values is less or equal the
+        number of declared categories
         - continuous otherwise
     """
 
@@ -170,12 +169,42 @@ class AttributeClassifier:
         if self.is_done:
             return self.cols_to_attr_type
 
-        self.assign_on_exact_distinct()
+        self.assign_on_all_nans()
         if self.is_done:
             return self.cols_to_attr_type
 
-        self.assign_remaining()
+        self.assign_on_exact_distinct()
+
         return self.cols_to_attr_type
+
+    def assign_on_all_nans(self) -> None:
+        """Assign continuous if either all rows are NaN or all rows are NULL.
+
+        This is for variables that were not measured but retroactively added to the
+        design schema.
+        """
+        candidate_cols = [col for col in self.unassigned_cols if self.rel.select(col).types[0] in DUCKDB_NUMERIC_TYPES]
+        if len(candidate_cols) == 0:
+            return
+
+        nan_queries = [f"CASE WHEN isnan({x}) THEN 1 ELSE 0 END AS {x}" for x in candidate_cols]
+        nan_queries = ",".join(nan_queries)
+
+        null_queries = [f"CASE WHEN {x} IS NULL THEN 1 ELSE 0 END AS {x}" for x in candidate_cols]
+        null_queries = ",".join(null_queries)
+
+        aggregation_queries = ",".join([f"MEAN({x}) AS {x}" for x in candidate_cols])
+
+        count_nans = self.rel.select(nan_queries).aggregate(aggregation_queries)
+        count_nulls = self.rel.select(null_queries).aggregate(aggregation_queries)
+
+        for col in candidate_cols:
+            n_nan = count_nans.select(col).fetchall()[0][0]
+            n_null = count_nulls.select(col).fetchall()[0][0]
+            if n_nan < 1.0 and n_null < 1.0:
+                continue
+            self.cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
+            self.unassigned_cols.remove(col)
 
     def assign_on_missing_value_labels(self) -> None:
         """Assign continuous the column has no value labels."""
@@ -208,8 +237,9 @@ class AttributeClassifier:
         for col in list(self.unassigned_cols):
             n_distinct = count_distincts.select(col).fetchall()[0][0]
             if n_distinct <= len(self.cols_to_value_labels[col]):
-                continue
-            self.cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
+                self.cols_to_attr_type[col] = NoteAttributeType.CATEGORICAL
+            else:
+                self.cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
             self.unassigned_cols.remove(col)
 
     def assign_remaining(self) -> None:

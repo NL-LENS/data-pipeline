@@ -37,6 +37,8 @@ NOTE_COLNAME = "NOTE"
 N_SIGMA = 6
 APPROX_SD = 0.13
 
+MAX_FRAC_DROP_DATE_CONVERSION = 0.2
+
 
 class NoteAttributeType(StrEnum):
     """Encodes types of note attributes."""
@@ -256,10 +258,22 @@ class AttributeClassifier:
 def define_event_time_col(rel: DuckDBPyRelation, config: SilverConfig, file_record: FileMetaRecord) -> DuckDBPyRelation:
     """Define the event-time column of data in a relation."""
     if config.has_event_col:
+        rel_with_original_event_time = rel.select(config.event_time_col).limit(10)
+        nrow_start = rel.shape[0]
         rel = rel.select(f"""* EXCLUDE({config.event_time_col}),
                          try_strptime({config.event_time_col}, '{config.event_time_col_fmt}')::DATE
                          AS {config.event_time_col}""")
         rel = rel.filter(f"{config.event_time_col} IS NOT NULL")
+        nrow_end = rel.shape[0]
+        if nrow_end <= (1 - MAX_FRAC_DROP_DATE_CONVERSION) * nrow_start:
+            msg = (
+                f"Date-casting reduced the number of rows by more "
+                f"than {MAX_FRAC_DROP_DATE_CONVERSION * 100}%. Occurred in: {config.event_time_col} to DATE "
+                f"with date format '{config.event_time_col_fmt}' \n"
+                f"Here is a sample of what {config.event_time_col} looks like "
+                f"in the bronze data:\n {rel_with_original_event_time.pl()}"
+            )
+            raise RuntimeError(msg)
     else:
         # TODO: task for config validation
         year = file_record.ref_period.year  # type: ignore[union-attr]

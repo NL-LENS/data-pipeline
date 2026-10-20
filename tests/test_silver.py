@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from collections.abc import Generator
 from dataclasses import dataclass
 from datetime import UTC
@@ -32,11 +33,45 @@ def db_con() -> Generator[duckdb.DuckDBPyConnection]:
 
 @dataclass
 class ColumnConfig:
-    """Configuration for creating one column of test data."""
+    """Configuration for creating one column of test data.
+
+    Closely ties into conftest.TestData.
+
+    Arguments
+    ---------
+    attribute_type: The note attribute type to generate.
+    value_label_keys:
+        The value label keys to for the .sav metadata.
+        For continuous variables,
+        this is used to inject missing values in the .sav meaning.
+        For categorical variables, it is the modalities to draw from.
+    frac_to_corrupt:
+        For continuous variables: the fraction of rows to corrupt.
+        Ignored for categorical variables.
+    generation_func:
+        Function to generate the data.
+        Needs to be None for categorical variables as a default is used.
+        For continuous, needs to be a function using `TestData.rng`. If not given,
+        rng.random is used.
+    expected_attr_type:
+        Expected note attribute type. Defaults to the `attribute_type`.
+    """
 
     attribute_type: NoteAttributeType
     value_label_keys: list[str | float | int | None] | None
     frac_to_corrupt: float | None = None
+    generation_func: Callable | None = None
+    expected_attr_type: NoteAttributeType | None = None
+
+    def __post_init__(self):
+        if self.attribute_type == NoteAttributeType.CATEGORICAL and self.generation_func is not None:
+            msg = "Custom generation functions are only supported for continuous columns."
+            raise NotImplementedError(msg)
+
+        if self.attribute_type == NoteAttributeType.CONTINUOUS and self.generation_func is None:
+            self.generation_func = lambda td: td.rng.random(td.sample_size).astype(np.float64)
+
+        self.expected_attr_type = self.expected_attr_type or self.attribute_type
 
 
 class TestClassifyAttributes(TestData):
@@ -56,7 +91,8 @@ class TestClassifyAttributes(TestData):
                 data_dict[col] = self.make_categorical(config.value_label_keys)
 
             elif config.attribute_type == NoteAttributeType.CONTINUOUS:
-                col_array = self.rng.random(size=self.sample_size).astype(np.float64)
+                assert config.generation_func is not None
+                col_array = config.generation_func(self)
                 if config.value_label_keys:
                     frac_to_corrupt = 0.05 if config.frac_to_corrupt is None else config.frac_to_corrupt
                     col_array = self.corrupt(
@@ -124,6 +160,16 @@ class TestClassifyAttributes(TestData):
                 "col_a": ColumnConfig(NoteAttributeType.CONTINUOUS, None),
                 "col_b": ColumnConfig(NoteAttributeType.CONTINUOUS, [None], 1),
             },
+            {
+                "col_a": ColumnConfig(NoteAttributeType.CONTINUOUS, None),
+                "col_b": ColumnConfig(
+                    NoteAttributeType.CONTINUOUS,
+                    [777, 888, 999],
+                    frac_to_corrupt=0,
+                    generation_func=lambda td: td.rng.binomial(n=1, p=0.5, size=td.sample_size),
+                    expected_attr_type=NoteAttributeType.CATEGORICAL,
+                ),
+            },
         ],
         ids=[
             "categorical_only",
@@ -134,6 +180,7 @@ class TestClassifyAttributes(TestData):
             "10k_categories",
             "continuous_with_many_value_labels",
             "continuous_all_missing",
+            "continuous_col_with_few_modalities",
         ],
     )
     def test_classify_attributes(self, db_con: DuckDBPyConnection, input_dict: dict[str, ColumnConfig]):
@@ -142,7 +189,7 @@ class TestClassifyAttributes(TestData):
         classifier = AttributeClassifier(rel, attr_col_meta)
         result = classifier.run()
         for col, config in input_dict.items():
-            expected_type = config.attribute_type
+            expected_type = config.expected_attr_type
             assert result[col] == expected_type, f"event attribute {col} incorrectly classified"
 
 

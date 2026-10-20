@@ -188,15 +188,15 @@ class AttributeClassifier:
             return
 
         nan_queries = [f"CASE WHEN isnan({x}) THEN 1 ELSE 0 END AS {x}" for x in candidate_cols]
-        nan_queries = ",".join(nan_queries)
+        nan_query_sql = ",".join(nan_queries)
 
         null_queries = [f"CASE WHEN {x} IS NULL THEN 1 ELSE 0 END AS {x}" for x in candidate_cols]
-        null_queries = ",".join(null_queries)
+        null_query_sql = ",".join(null_queries)
 
         aggregation_queries = ",".join([f"MEAN({x}) AS {x}" for x in candidate_cols])
 
-        count_nans = self.rel.select(nan_queries).aggregate(aggregation_queries)
-        count_nulls = self.rel.select(null_queries).aggregate(aggregation_queries)
+        count_nans = self.rel.select(nan_query_sql).aggregate(aggregation_queries)
+        count_nulls = self.rel.select(null_query_sql).aggregate(aggregation_queries)
 
         for col in candidate_cols:
             n_nan = count_nans.select(col).fetchall()[0][0]

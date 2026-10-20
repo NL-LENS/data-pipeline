@@ -17,7 +17,7 @@ class TestData:
         ids = [f"{x:09d}" for x in ids]
         return np.array(ids)
 
-    def make_categorical(self, categories: list[str], probs: list[float] | None = None) -> np.ndarray:
+    def make_categorical(self, categories: list[str | int], probs: list[float] | None = None) -> np.ndarray:
         """Make a categorical array.
 
         Each category is guaranteed to be sampled at least once.

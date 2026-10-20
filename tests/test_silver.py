@@ -253,6 +253,8 @@ class TestSilver(TestData):
             "CAT_ATTR1": self.make_categorical(["a", "b", "c", "missing"], [0.1, 0.6, 0.2, 0.1]),
             "CAT_ATTR2": self.make_categorical(["x", "y", "missing"], [0.2, 0.75, 0.05]),
             "CONTINUOUS_ATTR3_NO_MISSING": self.make_continuous(),
+            # for instance: "financial independence"
+            "ORDINAL_ATTR_AS_STR": self.make_categorical(list(range(10))).astype(str),
             "NULL_COL": self.make_null_col(),
         }
 
@@ -394,6 +396,16 @@ class TestSilver(TestData):
             value_labels=None,
         )
 
+        ordinal_attr_as_str_meta = SavColumnMeta(
+            source_path=source_path,
+            source_filename=source_filename,
+            variable="ORDINAL_ATTR_AS_STR",
+            original_variable="continuous_attr4",
+            readstat_type="str",
+            description="",
+            value_labels=None,
+        )
+
         cat1_meta = SavColumnMeta(
             source_path=source_path,
             source_filename=source_filename,
@@ -438,6 +450,7 @@ class TestSilver(TestData):
             cat1_meta,
             cat2_meta,
             continuous3_meta,
+            ordinal_attr_as_str_meta,
             null_col_meta,
         ]
         table.insert_many(column_list)
@@ -494,6 +507,7 @@ class TestSilver(TestData):
             "CONTINUOUS_ATTR1",
             "CONTINUOUS_ATTR2",
             "CONTINUOUS_ATTR3_NO_MISSING",
+            "ORDINAL_ATTR_AS_STR",
             "NULL_COL",
             "CAT_ATTR1",
             "CAT_ATTR2",
@@ -504,6 +518,7 @@ class TestSilver(TestData):
             "CONTINUOUS_ATTR1": lambda x: x > 0,
             "CONTINUOUS_ATTR2": lambda x: x > 0,
             "CONTINUOUS_ATTR3_NO_MISSING": lambda x: x == 0,
+            "ORDINAL_ATTR_AS_STR": lambda x: x == 0,
             "NULL_COL": lambda x: x == 1,
         }
 

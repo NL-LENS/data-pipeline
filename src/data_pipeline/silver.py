@@ -194,7 +194,6 @@ class AttributeClassifier:
         null_query_sql = ",".join(null_queries)
 
         aggregation_queries = ",".join([f"MEAN({x}) AS {x}" for x in candidate_cols])
-
         count_nans = self.rel.select(nan_query_sql).aggregate(aggregation_queries)
         count_nulls = self.rel.select(null_query_sql).aggregate(aggregation_queries)
 
@@ -316,6 +315,9 @@ def replace_continuous_nulls(rel: DuckDBPyRelation, attr_col_meta: list[SavColum
         attr_name = col_meta.variable
         if col_meta.value_labels is None:
             logger.debug("No value labels declared for %s", attr_name)
+            if rel.select(attr_name).types[0] not in DUCKDB_NUMERIC_TYPES:
+                logger.debug("Casting %s to DOUBLE", attr_name)
+                rel = rel.select(f"* EXCLUDE {attr_name}, {attr_name}::DOUBLE AS {attr_name}")
             continue
 
         missing_values = [float(x) for x in col_meta.value_labels]

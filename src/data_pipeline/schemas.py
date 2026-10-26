@@ -24,6 +24,13 @@ class SavMetaTable(DuckDBTable):
 
 
 @dataclass
+class SilverMetaTable(DuckDBTable):
+    """Table for silver metadata."""
+
+    table_name = "silver_meta"
+
+
+@dataclass
 class FileMetaRecord(DuckDBRecord):
     """Define the schema for file metadata records.
 
@@ -113,3 +120,47 @@ class SavColumnMeta(DuckDBRecord):
     readstat_type: str
     description: str | None
     value_labels: dict | None = None  # TODO: may consider alternative to dict/json at some point
+
+
+@dataclass
+class SilverMetaRecord(DuckDBRecord):
+    """Container for metadata of a single silver file.
+
+    Stores information from the input (which bronze file was used),
+    from the user-supplied configuration (how the bronze file was processed),
+    and from the output (which silver file was created, the attribute types).
+
+    Arguments
+    ---------
+    silver_path:
+        Path to the folder where the silver file is stored.
+    file_name:
+        Name of the silver file at `silver_path`.
+    bronze_path:
+        Path to the bronze file used for creating the silver file.
+    last_modified:
+        Timestamp of the last modification of the silver file.]
+    bronze_id_col:
+        Column in bronze file used to define the primary identifier in the silver
+        file.
+    bronze_event_time_col:
+        Column in the bronze file used to define the time column in the
+        silver file.
+    bronze_cols_dropped:
+        Columns in the bronze file that were dropped when creating the silver
+        file.
+    event_note_types:
+        Mapping of event attributes to event attribute types: indicates whether
+        an attribute is categorical or continuous.
+        See :py:data:`data_pipeline.silver.AttributeClassifier`.
+    """
+
+    silver_path: Path = field(metadata={"primary_key": True})
+    file_name: Path = field(metadata={"primary_key": True})
+    # TODO: FK needs to refer to a column with a UNIQUE constraint
+    bronze_path: Path  # = field(metadata={"foreign_key": {"table": "source_manifest", "column": "bronze_path"}})
+    last_modified: datetime
+    bronze_id_col: str
+    bronze_event_time_col: str
+    bronze_cols_dropped: list[str]
+    event_note_types: dict[str, str]

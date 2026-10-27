@@ -30,18 +30,22 @@ The sections below outline the steps in each case.
 
 1. (**important**) announce your plan to the rest of the community _before you start working_. This announcement should be in the form of a (new) issue;
 1. (**important**) wait until some kind of consensus is reached about your idea being a good idea;
-1. if needed, fork the repository to your own Github profile and create your own feature branch off of the latest main commit.
+1. If needed, fork the repository to your own Github profile and create your own feature branch off of the latest main commit.
  While working on your feature branch, make sure to stay up to date with the main branch by pulling in changes, possibly
  from the 'upstream' repository (follow the instructions [here](https://help.github.com/articles/configuring-a-remote-for-a-fork/)
  and [here](https://help.github.com/articles/syncing-a-fork/));
-1. install dependencies (see the [development documentation]);
-1. make sure the existing tests still work by running ``pytest``. If project tests fail use ``pytest --keep-copied-projects`` to
+1. Install dependencies (see the [development documentation]);
+1. Make sure the existing tests still work by running ``pytest``. If project tests fail use ``pytest --keep-copied-projects`` to
  keep generated project files in `/tmp/pytest-*` and investigate;
-1. add your own tests (if necessary);
-1. update or expand the documentation;
+1. Add your own tests (if necessary);
+1. Update or expand the documentation;
 1. If your changes are user-facing, add them to the [changelog].
 1. [push](http://rogerdudler.github.io/git-guide/) your feature branch to (your fork of) the Python Template repository on GitHub;
-1. create the pull request, e.g. following the instructions [here](https://help.github.com/articles/creating-a-pull-request/).
+1. Create the pull request, e.g. following the instructions [here](https://help.github.com/articles/creating-a-pull-request/).
+  - Only mark pull requests as ready when all checks pass, and request someone to review.
+  - If you want someone to review your work before that, either tag them in a comment,
+  or contact them in another way.
+
 
 In case you feel like you've made a valuable contribution, but you don't know how to write or run tests for it, or how to generate the documentation: don't let this discourage you from making the pull request; we can help you! Just go ahead and submit the pull request, but keep in mind that you might be asked to append additional commits to your pull request.
 

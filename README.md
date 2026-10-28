@@ -166,3 +166,34 @@ dataset name (e.g. `SPOLISBUS`):
 | `PRIMARY_IDS` | Columns that identify the unit an event belongs to (e.g. `RINPERSOON`, `RINPERSOONS`) |
 | `SECONDARY_IDS` | Other ID columns kept as event attributes (e.g. the related person in network tables) |
 | `TIME_VARIABLES` | The event time: either a date column, or a fixed reference date (peilmoment) written as `"MM-DD"` and combined with the release year.  |
+
+## Contributors ✨
+
+Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/en/reference/emoji-key/#about-the-emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/f-hafner"><img src="https://avatars.githubusercontent.com/u/55716026?v=4?s=100" width="100px;" alt="f-hafner"/><br /><sub><b>f-hafner</b></sub></a><br /><a href="https://github.com/NL-LENS/data-pipeline/commits?author=f-hafner" title="Code">💻</a></td>
+    </tr>
+  </tbody>
+  <tfoot>
+    <tr>
+      <td align="center" size="13px" colspan="7">
+        <img src="https://raw.githubusercontent.com/all-contributors/all-contributors-cli/1b8533af435da9854653492b1327a23a4dbd0a10/assets/logo-small.svg">
+          <a href="https://all-contributors.js.org/docs/en/bot/usage">Add your contributions</a>
+        </img>
+      </td>
+    </tr>
+  </tfoot>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!

@@ -166,29 +166,3 @@ dataset name (e.g. `SPOLISBUS`):
 | `PRIMARY_IDS` | Columns that identify the unit an event belongs to (e.g. `RINPERSOON`, `RINPERSOONS`) |
 | `SECONDARY_IDS` | Other ID columns kept as event attributes (e.g. the related person in network tables) |
 | `TIME_VARIABLES` | The event time: either a date column, or a fixed reference date (peilmoment) written as `"MM-DD"` and combined with the release year.  |
-
-
-
-## Development setup
-
-```bash
-uv sync --extra dev
-
-source .venv/bin/activate
-uv pip install -e ./
-pytest
-```
-
-
-#### Running CI locally with `act`
-
-Assuming `act` is available and on the PATH:
-
-```bash
-act -P ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest -W .github/workflows/$WORKFLOW_FILE.yml > .ci_log.txt
-cat .ci_log.txt | grep Job # see status of each job run
-rm -rf .ci_log.txt
-```
-
-
-

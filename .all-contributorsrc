@@ -16,7 +16,91 @@
       "avatar_url": "https://avatars.githubusercontent.com/u/55716026?v=4",
       "profile": "https://github.com/f-hafner",
       "contributions": [
-        "code"
+        "code",
+        "projectManagement",
+        "ideas",
+        "doc"
+      ]
+    },
+    {
+      "login": "jgarciab",
+      "name": "Javier Garcia-Bernardo",
+      "avatar_url": "https://avatars.githubusercontent.com/u/6234476?v=4",
+      "profile": "https://github.com/jgarciab",
+      "contributions": [
+        "code",
+        "data",
+        "ideas",
+        "review",
+        "financial",
+        "userTesting"
+      ]
+    },
+    {
+      "login": "maltelueken",
+      "name": "Malte Lüken",
+      "avatar_url": "https://avatars.githubusercontent.com/u/63114869?v=4",
+      "profile": "https://maltelueken.github.io/",
+      "contributions": [
+        "review",
+        "ideas"
+      ]
+    },
+    {
+      "login": "fqixiang",
+      "name": "Qixiang Fang",
+      "avatar_url": "https://avatars.githubusercontent.com/u/20680189?v=4",
+      "profile": "https://github.com/fqixiang",
+      "contributions": [
+        "userTesting",
+        "ideas"
+      ]
+    },
+    {
+      "login": "temery86",
+      "name": "Tom Emery",
+      "avatar_url": "https://avatars.githubusercontent.com/u/35594910?v=4",
+      "profile": "http://www.odissei-data.nl/",
+      "contributions": [
+        "financial",
+        "ideas"
+      ]
+    },
+    {
+      "login": "TheDugCoding",
+      "name": "TheDugCoding",
+      "avatar_url": "https://avatars.githubusercontent.com/u/144800109?v=4",
+      "profile": "https://github.com/TheDugCoding",
+      "contributions": [
+        "ideas",
+        "research"
+      ]
+    },
+    {
+      "login": "mischewu",
+      "name": "Maximilian Reichert",
+      "avatar_url": "https://avatars.githubusercontent.com/u/130792400?v=4",
+      "profile": "https://github.com/mischewu",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "daob",
+      "name": "Daniel Oberski",
+      "avatar_url": "https://avatars.githubusercontent.com/u/65516?v=4",
+      "profile": "https://daob.nl/",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "AngelicaMaineri",
+      "name": "Angelica M. Maineri",
+      "avatar_url": "https://avatars.githubusercontent.com/u/82025706?v=4",
+      "profile": "https://github.com/AngelicaMaineri",
+      "contributions": [
+        "ideas"
       ]
     }
   ],

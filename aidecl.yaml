@@ -1,0 +1,33 @@
+# AI Declaration Format (aidecl)
+# Use a role or team name rather than personal name if this file will be public
+
+schema_version: 1.0.0
+project:
+  name: data-pipeline
+  repository: git@github.com:NL-LENS/data-pipeline.git
+  content_type: software
+ai_usage:
+  used: true
+  summary: |
+    AI was used as an assistant for research and brainstorming.
+    Code is written by hand unless otherwise specified.
+  level: moderate
+  tools:
+  - name: Kimi K3
+    vendor: Opencode
+    type: agent
+    purpose:
+    - brainstorming
+    - writing regexes
+  - name: Deepseek 4.1 Flash
+    vendor: Opencode
+    type: agent
+    purpose:
+    - code review
+    - brainstorming
+  scope:
+    code_review: true
+    debugging: true
+declaration:
+  date: '2026-10-26'
+  declared_by: NL-LENS team

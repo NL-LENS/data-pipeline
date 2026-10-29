@@ -166,3 +166,44 @@ dataset name (e.g. `SPOLISBUS`):
 | `PRIMARY_IDS` | Columns that identify the unit an event belongs to (e.g. `RINPERSOON`, `RINPERSOONS`) |
 | `SECONDARY_IDS` | Other ID columns kept as event attributes (e.g. the related person in network tables) |
 | `TIME_VARIABLES` | The event time: either a date column, or a fixed reference date (peilmoment) written as `"MM-DD"` and combined with the release year.  |
+
+## Contributors
+
+Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/en/reference/emoji-key/#about-the-emoji-key)):
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/f-hafner"><img src="https://avatars.githubusercontent.com/u/55716026?v=4?s=100" width="100px;" alt="f-hafner"/><br /><sub><b>f-hafner</b></sub></a><br /><a href="https://github.com/NL-LENS/data-pipeline/commits?author=f-hafner" title="Code">💻</a> <a href="#projectManagement-f-hafner" title="Project Management">📆</a> <a href="#ideas-f-hafner" title="Ideas, Planning, & Feedback">🤔</a> <a href="https://github.com/NL-LENS/data-pipeline/commits?author=f-hafner" title="Documentation">📖</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/jgarciab"><img src="https://avatars.githubusercontent.com/u/6234476?v=4?s=100" width="100px;" alt="Javier Garcia-Bernardo"/><br /><sub><b>Javier Garcia-Bernardo</b></sub></a><br /><a href="https://github.com/NL-LENS/data-pipeline/commits?author=jgarciab" title="Code">💻</a> <a href="#data-jgarciab" title="Data">🔣</a> <a href="#ideas-jgarciab" title="Ideas, Planning, & Feedback">🤔</a> <a href="https://github.com/NL-LENS/data-pipeline/pulls?q=is%3Apr+reviewed-by%3Ajgarciab" title="Reviewed Pull Requests">👀</a> <a href="#financial-jgarciab" title="Financial">💵</a> <a href="#userTesting-jgarciab" title="User Testing">📓</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://maltelueken.github.io/"><img src="https://avatars.githubusercontent.com/u/63114869?v=4?s=100" width="100px;" alt="Malte Lüken"/><br /><sub><b>Malte Lüken</b></sub></a><br /><a href="https://github.com/NL-LENS/data-pipeline/pulls?q=is%3Apr+reviewed-by%3Amaltelueken" title="Reviewed Pull Requests">👀</a> <a href="#ideas-maltelueken" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/fqixiang"><img src="https://avatars.githubusercontent.com/u/20680189?v=4?s=100" width="100px;" alt="Qixiang Fang"/><br /><sub><b>Qixiang Fang</b></sub></a><br /><a href="#userTesting-fqixiang" title="User Testing">📓</a> <a href="#ideas-fqixiang" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://www.odissei-data.nl/"><img src="https://avatars.githubusercontent.com/u/35594910?v=4?s=100" width="100px;" alt="Tom Emery"/><br /><sub><b>Tom Emery</b></sub></a><br /><a href="#financial-temery86" title="Financial">💵</a> <a href="#ideas-temery86" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/TheDugCoding"><img src="https://avatars.githubusercontent.com/u/144800109?v=4?s=100" width="100px;" alt="TheDugCoding"/><br /><sub><b>TheDugCoding</b></sub></a><br /><a href="#ideas-TheDugCoding" title="Ideas, Planning, & Feedback">🤔</a> <a href="#research-TheDugCoding" title="Research">🔬</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/mischewu"><img src="https://avatars.githubusercontent.com/u/130792400?v=4?s=100" width="100px;" alt="Maximilian Reichert"/><br /><sub><b>Maximilian Reichert</b></sub></a><br /><a href="#ideas-mischewu" title="Ideas, Planning, & Feedback">🤔</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://daob.nl/"><img src="https://avatars.githubusercontent.com/u/65516?v=4?s=100" width="100px;" alt="Daniel Oberski"/><br /><sub><b>Daniel Oberski</b></sub></a><br /><a href="#ideas-daob" title="Ideas, Planning, & Feedback">🤔</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/AngelicaMaineri"><img src="https://avatars.githubusercontent.com/u/82025706?v=4?s=100" width="100px;" alt="Angelica M. Maineri"/><br /><sub><b>Angelica M. Maineri</b></sub></a><br /><a href="#ideas-AngelicaMaineri" title="Ideas, Planning, & Feedback">🤔</a></td>
+    </tr>
+  </tbody>
+  <tfoot>
+    <tr>
+      <td align="center" size="13px" colspan="7">
+        <img src="https://raw.githubusercontent.com/all-contributors/all-contributors-cli/1b8533af435da9854653492b1327a23a4dbd0a10/assets/logo-small.svg">
+          <a href="https://all-contributors.js.org/docs/en/bot/usage">Add your contributions</a>
+        </img>
+      </td>
+    </tr>
+  </tfoot>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!

@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 authors = [
-    { name = "Flavio Hafner", email = "f.hafner@esciencecenter.nl" }
+    { name = "NL-LENS team", email = "f.hafner@esciencecenter.nl" }
 ]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",

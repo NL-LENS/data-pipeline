@@ -5,6 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- Silver format changed, and `SilverConfig` fields have changed, via [PR](https://github.com/NL-LENS/data-pipeline/pull/73)
 - Function to convert from bronze to silver (no CLI), via [PR](https://github.com/NL-LENS/data-pipeline/pull/44)
 - CLI for `init` and `build bronze`, via [PR](https://github.com/NL-LENS/data-pipeline/pull/26).
 - Feature for processing `.sav` files to parquet, via [PR](https://github.com/NL-LENS/data-pipeline/pull/22).

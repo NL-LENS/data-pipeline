@@ -12,7 +12,12 @@ class TestData:
     rng: np.random._generator.Generator = np.random.default_rng(1234)
 
     def make_identifiers(self, max_id: int = 1_000_000) -> np.ndarray:
-        """Create an array of identifiers in string format."""
+        """Create an array of identifiers in string format.
+
+        Arguments:
+            max_id: The maximum identifier drawn. Using a lower number
+            leads to more repeated identifiers.
+        """
         ids = list(self.rng.integers(1, max_id, size=self.sample_size))
         ids = [f"{x:09d}" for x in ids]
         return np.array(ids)

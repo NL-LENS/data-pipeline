@@ -315,7 +315,7 @@ def _make_struct_query(inputs: list[str] | dict[str, str | None] | None) -> str:
             query_inputs = [f"{col} := {col}" for col in inputs]
         case _ if isinstance(inputs, dict):
             query_inputs = [
-                f"{bronze_col} := {silver_entity}"
+                f"{silver_schema.ENTITY_COLUMNS[silver_entity]} := {bronze_col}"
                 for (bronze_col, silver_entity) in inputs.items()
                 if silver_entity is not None
             ]

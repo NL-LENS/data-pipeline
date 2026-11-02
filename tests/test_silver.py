@@ -9,13 +9,11 @@ import numpy as np
 import polars as pl
 import pytest
 from _duckdb import DuckDBPyConnection
+from data_pipeline import silver_schema
 from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SavColumnMeta
 from data_pipeline.schemas import SavMetaTable
 from data_pipeline.schemas import SourceManifest
-from data_pipeline.silver import NOTE_COLNAME
-from data_pipeline.silver import PERSON_COLNAME
-from data_pipeline.silver import TIME_COLNAME
 from data_pipeline.silver import AttributeClassifier
 from data_pipeline.silver import NoteAttributeType
 from data_pipeline.silver import SilverConfig
@@ -194,21 +192,22 @@ class TestClassifyAttributes(TestData):
 
 
 config_with_existing_time_col = SilverConfig(
-    rinpersoon_col="RINPERSOON",
+    primary_key={"RINPERSOON": "person"},
     rinpersoons_col="RINPERSOONS",
     time_cols=["TIME1", "TIME2"],
-    id_cols=["RINPERSOON", "IRRELEVANT_ID"],
+    secondary_keys={"IRRELEVANT_ID": None},
     event_time_col="TIME1",
 )
 config_without_existing_time_col = SilverConfig(
-    rinpersoon_col="RINPERSOON",
+    primary_key={"RINPERSOON": "person"},
     rinpersoons_col="RINPERSOONS",
     time_cols=[],
-    id_cols=["RINPERSOON", "IRRELEVANT_ID"],
+    secondary_keys={"IRRELEVANT_ID": None},
     event_time_col=None,
     event_time_col_fmt=None,
     apply_event_time="01-01",
 )
+# TODO: add test cases. (a) 1 relation; (b) no relation
 
 
 @pytest.mark.parametrize(
@@ -490,16 +489,20 @@ class TestSilver(TestData):
         )
 
         if config.event_time_col:
-            silver_df = silver_df.with_columns(pl.col("TIME1").str.to_date().alias(TIME_COLNAME))
+            silver_df = silver_df.with_columns(pl.col("TIME1").str.to_date().alias(silver_schema.TIME_COLUMN))
         else:
             year_col = f"{self.bronze_ref_year}-{config.apply_event_time}"
-            silver_df = silver_df.with_columns(pl.lit(year_col).str.to_date().alias(TIME_COLNAME))
+            silver_df = silver_df.with_columns(pl.lit(year_col).str.to_date().alias(silver_schema.TIME_COLUMN))
 
-        silver_df = silver_df.sort(by=["RINPERSOON", TIME_COLNAME])
+        silver_df = silver_df.sort(by=["RINPERSOON", silver_schema.TIME_COLUMN])
 
         rel = con.read_parquet(dest_path)
 
-        expected_columns = [PERSON_COLNAME, TIME_COLNAME, NOTE_COLNAME]
+        expected_columns = [
+            silver_schema.ENTITY_COLUMNS["person"],
+            silver_schema.TIME_COLUMN,
+            silver_schema.NOTE_COLUMN,
+        ]
         assert rel.columns == expected_columns, "Incorrect columns"
 
         expected_types = ["bigint", "date", "struct"]
@@ -509,11 +512,13 @@ class TestSilver(TestData):
         assert silver_df.shape[0] == rel.shape[0], "Wrong number of rows"
 
         (
-            pl.testing.assert_frame_equal(silver_df.select(TIME_COLNAME), rel.select(TIME_COLNAME).pl()),
+            pl.testing.assert_frame_equal(
+                silver_df.select(silver_schema.TIME_COLUMN), rel.select(silver_schema.TIME_COLUMN).pl()
+            ),
             "Rows out of order",
         )
 
-        note_fields_and_types = rel.select(NOTE_COLNAME).types[0].children
+        note_fields_and_types = rel.select(silver_schema.NOTE_COLUMN).types[0].children
         note_fields = [x[0] for x in note_fields_and_types]
         expected_fields = {
             "CONTINUOUS_ATTR1",

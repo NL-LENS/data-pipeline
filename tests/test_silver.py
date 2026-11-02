@@ -501,11 +501,12 @@ class TestSilver(TestData):
         expected_columns = [
             silver_schema.ENTITY_COLUMNS["person"],
             silver_schema.TIME_COLUMN,
+            silver_schema.RELATION_COLUMN,
             silver_schema.NOTE_COLUMN,
         ]
         assert rel.columns == expected_columns, "Incorrect columns"
 
-        expected_types = ["bigint", "date", "struct"]
+        expected_types = ["bigint", "date", "integer", "struct"]
         col_types = [t.id for t in rel.types]
         assert col_types == expected_types, "Wrong column types"
 
@@ -517,6 +518,7 @@ class TestSilver(TestData):
             ),
             "Rows out of order",
         )
+        # TODO: add test for ordering of RELATION struct
 
         note_fields_and_types = rel.select(silver_schema.NOTE_COLUMN).types[0].children
         note_fields = [x[0] for x in note_fields_and_types]

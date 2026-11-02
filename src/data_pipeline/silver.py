@@ -67,6 +67,9 @@ class SilverConfig:
         Dictionary mapping relational IDs in bronze to entity types
         defined in :py:data:`~data_pipeline.silver_schema.ENTITY_COLUMNS`
         If columns that are not used in silver, their values should be None.
+        The bronze columns are assumed to be castable to 64-bit integer.
+        The declaration order matters for the silver data, see
+        :py:data:`data_pipeline.silver.convert_to_silver`.
     event_time_col:
         Column name in bronze identifying the TIME.
     event_time_col_fmt:
@@ -275,7 +278,9 @@ class AttributeClassifier:
             self.cols_to_attr_type[col] = NoteAttributeType.CONTINUOUS
 
 
-def define_event_time_col(rel: DuckDBPyRelation, config: SilverConfig, file_record: FileMetaRecord) -> DuckDBPyRelation:
+def define_event_time_column(
+    rel: DuckDBPyRelation, config: SilverConfig, file_record: FileMetaRecord
+) -> DuckDBPyRelation:
     """Define the event-time column of data in a relation."""
     if config.has_event_col:
         rel_with_original_event_time = rel.select(config.event_time_col).limit(10)
@@ -303,6 +308,28 @@ def define_event_time_col(rel: DuckDBPyRelation, config: SilverConfig, file_reco
     return rel
 
 
+def _make_struct_query(inputs: list[str] | dict[str, str | None] | None) -> str:
+    """Create a struct query from an iterable input."""
+    match inputs:
+        case _ if isinstance(inputs, list):
+            query_inputs = [f"{col} := {col}" for col in inputs]
+        case _ if isinstance(inputs, dict):
+            query_inputs = [
+                f"{bronze_col} := {silver_entity}"
+                for (bronze_col, silver_entity) in inputs.items()
+                if silver_entity is not None
+            ]
+        case None:
+            query_inputs = []
+        case _:
+            msg = f"Unexpected input: {inputs}"
+            raise NotImplementedError(msg)
+
+    if len(query_inputs) == 0:
+        return "NULL"
+    return f"struct_pack({','.join(query_inputs)})"
+
+
 def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols: list[str]) -> DuckDBPyRelation:
     """Transform a relation into the event-table format.
 
@@ -316,16 +343,20 @@ def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols
         Column names of event attributes.
     """
     # TODO: use NULL if no RELATION
-    struct_query_inputs = [f"{col} := {col}" for col in attribute_cols]
-    struct_query = ", ".join(struct_query_inputs)
+    struct_query_for_note = _make_struct_query(attribute_cols)
+    struct_query_for_relation = _make_struct_query(config.secondary_keys)
     time_colname_query = (
         f"{config.event_time_col} AS {silver_schema.TIME_COLUMN}" if config.has_event_col else silver_schema.TIME_COLUMN
     )
-    rel = rel.select(f"""{config.bronze_primary_key_column} AS {config.silver_primary_key_column},
-                     {time_colname_query},
-                     struct_pack({struct_query}) AS {silver_schema.NOTE_COLUMN}
-                     """)
-    return rel.order(f"{config.silver_primary_key_column}, {silver_schema.TIME_COLUMN}")
+    rel = rel.select(
+        f"{config.bronze_primary_key_column} AS {config.silver_primary_key_column}, "
+        f"{time_colname_query}, "
+        f"{struct_query_for_relation} AS {silver_schema.RELATION_COLUMN}, "
+        f"{struct_query_for_note} AS {silver_schema.NOTE_COLUMN}"
+    )
+    return rel.order(
+        f"{config.silver_primary_key_column}, {silver_schema.TIME_COLUMN}, {silver_schema.RELATION_COLUMN}"
+    )
 
 
 def cleanse_continuous(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> DuckDBPyRelation:
@@ -388,7 +419,10 @@ def convert_nans_to_null(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMet
 
 
 def run_filter(rel: DuckDBPyRelation, config: SilverConfig) -> DuckDBPyRelation:
-    """Filter columns in rel based on the configuration."""
+    """Filter columns in rel based on the configuration.
+
+    Only works for VARCHAR columns.
+    """
     if config.filter_col is None:
         return rel
 
@@ -399,9 +433,25 @@ def run_filter(rel: DuckDBPyRelation, config: SilverConfig) -> DuckDBPyRelation:
     return rel.filter(query)
 
 
+def cast_identifier_columns(rel: DuckDBPyRelation, config: SilverConfig) -> DuckDBPyRelation:
+    """Cast all identifiers required for silver to BIGINT."""
+    columns_to_cast = [config.bronze_primary_key_column]
+    if config.secondary_keys is not None:
+        columns_to_cast += [
+            bronze_column
+            for (bronze_column, silver_entity) in config.secondary_keys.items()
+            if silver_entity is not None
+        ]
+
+    cast_query = [f"CAST({column} AS BIGINT) AS {column}" for column in columns_to_cast]
+    full_query = f"* EXCLUDE({','.join(columns_to_cast)}), {','.join(cast_query)}"
+    return rel.select(full_query)
+
+
 def convert_to_silver(
     source_manifest: SourceManifest, source_path: Path, source_filename: Path, dest_path: Path, config: SilverConfig
 ) -> SilverMetaRecord:
+    # TODO: update table schema in docstring
     """Convert bronze data to silver.
 
     The resulting parquet file has the following schema:
@@ -431,15 +481,20 @@ def convert_to_silver(
     No column for the event type is created; this should be specified
     in the location where the file is stored, using hive partitioning.
 
-    The function processes data as follows:
-        1. Drops rows based on RINPERSOONS = R.
-        2. Drops columns per the column config.
+    The function processes data, using the column configuration from :py:data:`data_pipeline.silver.SilverConfig`:
+        1. Drops rows based on filter_col in the configuration
+        2. Drops columns per the configuration
         3. All columns that are not dropped, not person/time identifier, become
         NOTE attributes. The type of the attribute -- continuous or categorical --
         is inferred from the column's distribution and cardinality, compared to
         the one declared in the metadata.
         See :py:data:`~data_pipeline.silver.AttributeClassifier`.
         4. In continuous NOTE attributes, declared missing values are converted to NULL.
+
+    The output table is ordered by:
+        - primary key declared in the config
+        - time column
+        - keys of the secondary keys dictionary declared in the config
 
     Arguments
     ---------
@@ -474,13 +529,9 @@ def convert_to_silver(
 
     rel = con.read_parquet(file_record.bronze_path)  # type: ignore[arg-type]
     rel = run_filter(rel, config)
-    rel = define_event_time_col(rel, config, file_record)
+    rel = define_event_time_column(rel, config, file_record)
+    rel = cast_identifier_columns(rel, config)
 
-    query = (
-        f"* EXCLUDE({config.bronze_primary_key_column})"
-        f", CAST({config.bronze_primary_key_column} AS BIGINT) AS {config.bronze_primary_key_column}"
-    )
-    rel = rel.select(query)
     rel = rel.select(f"* EXCLUDE ({','.join(config.cols_to_drop)})")
 
     columns = rel.columns

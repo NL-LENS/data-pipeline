@@ -4,6 +4,7 @@ from types import MappingProxyType
 
 TIME_COLUMN = "DATE"
 NOTE_COLUMN = "NOTE"
+RELATION_COLUMN = "RELATIONS"
 
 ENTITY_COLUMNS: MappingProxyType[str, str] = MappingProxyType(
     {

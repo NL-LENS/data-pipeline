@@ -309,7 +309,25 @@ def define_event_time_column(
 
 
 def _make_struct_query(inputs: list[str] | dict[str, str | None] | None) -> str:
-    """Create a struct query from an iterable input."""
+    """Create a struct query from an iterable input.
+
+    Arguments
+    ---------
+        inputs: A list or a dictionary.
+        If it is a list, the list entries need to be
+        column names, and the resulting struct has the same keys as the original
+        columns.
+        If it is a dictionary, it should be key-value pairs as specified
+        in the secondary_keys field of SilverConfig.
+
+    Returns
+    -------
+        A string that can be plugged into a sql query for DuckDB:
+            - If the input is None, it is just NULL.
+            - Otherwise, it is of the form `struct_pack(key: col)` where `key`
+            is the new struct key and `col` is the original column in the input
+            relation.
+    """
     match inputs:
         case _ if isinstance(inputs, list):
             query_inputs = [f"{col} := {col}" for col in inputs]
@@ -342,7 +360,6 @@ def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols
     attribute_cols:
         Column names of event attributes.
     """
-    # TODO: use NULL if no RELATION
     struct_query_for_note = _make_struct_query(attribute_cols)
     struct_query_for_relation = _make_struct_query(config.secondary_keys)
     time_colname_query = (

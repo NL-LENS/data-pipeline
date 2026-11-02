@@ -193,14 +193,14 @@ class TestClassifyAttributes(TestData):
 
 config_with_existing_time_col = SilverConfig(
     primary_key={"RINPERSOON": "person"},
-    rinpersoons_col="RINPERSOONS",
+    filter_col={"RINPERSOONS": "R"},
     time_cols=["TIME1", "TIME2"],
     secondary_keys={"IRRELEVANT_ID": None},
     event_time_col="TIME1",
 )
 config_without_existing_time_col = SilverConfig(
     primary_key={"RINPERSOON": "person"},
-    rinpersoons_col="RINPERSOONS",
+    filter_col={"RINPERSOONS": "R"},
     time_cols=[],
     secondary_keys={"IRRELEVANT_ID": None},
     event_time_col=None,

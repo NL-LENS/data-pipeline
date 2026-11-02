@@ -467,7 +467,14 @@ class TestSilver(TestData):
         table.insert_many(column_list)
 
     @pytest.mark.usefixtures("metadata_db")
-    def test_silver(self, db_file: Path, input_paths: dict[str, Path], tmp_path: Path, config: SilverConfig):
+    def test_silver(
+        self,
+        db_con: DuckDBPyConnection,
+        db_file: Path,
+        input_paths: dict[str, Path],
+        tmp_path: Path,
+        config: SilverConfig,
+    ):
         """Test conversion of bronze to silver."""
         self.create_bronze_data(input_paths, config)
         dest_path = tmp_path / "silver.parquet"
@@ -482,8 +489,6 @@ class TestSilver(TestData):
             config=config,
         )
 
-        con = duckdb.connect()
-
         silver_df = (
             pl.read_parquet(input_paths["bronze_file"]).filter(self.validity_mask == 1).cast({"RINPERSOON": pl.Int64})
         )
@@ -496,7 +501,7 @@ class TestSilver(TestData):
 
         silver_df = silver_df.sort(by=["RINPERSOON", silver_schema.TIME_COLUMN])
 
-        rel = con.read_parquet(dest_path)
+        rel = db_con.read_parquet(dest_path)
 
         expected_columns = [
             silver_schema.ENTITY_COLUMNS["person"],
@@ -548,5 +553,3 @@ class TestSilver(TestData):
                 rel.select(f"CASE WHEN NOTE.{col} IS NULL THEN 1 ELSE 0 END AS X").aggregate("mean(X)").fetchall()[0][0]
             )
             assert comparison_func(avg_null), f"Missing values incorrectly coded for {col}"
-
-        con.close()

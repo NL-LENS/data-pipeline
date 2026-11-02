@@ -569,8 +569,9 @@ class TestMakeEventTable(TestData):
         [
             ({"SCHOOLID": "school", "RINOBJECTNR": "dwelling"}, "struct"),
             ({"SCHOOLID": None, "RINOBJECTNR": None}, "integer"),
+            (None, "integer"),
         ],
-        ids=["2_relations", "no_relations"],
+        ids=["2_relations", "no_mapping", "no_relations"],
     )
     def test_make_event_table(
         self, db_con: DuckDBPyConnection, secondary_key_config: dict[str, str | None], expected_relation_type: str

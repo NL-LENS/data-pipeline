@@ -56,10 +56,10 @@ def main():
         "INPA": (
             "INPA",
             SilverConfig(
-                rinpersoon_col="RINPERSOON",
-                rinpersoons_col="RINPERSOONS",
+                primary_key={"RINPERSOON": "person"},
+                filter_col={"RINPERSOONS": "R"},
                 time_cols=[],
-                id_cols=["RINPERSOON", "RINPERSOONHKW"],
+                secondary_keys={"RINPERSOONHKW": None},
                 event_time_col=None,
                 apply_event_time="01-01",
             ),
@@ -67,8 +67,8 @@ def main():
         "JOB_START": (
             "SPOLIS",
             SilverConfig(
-                rinpersoon_col="RINPERSOON",
-                rinpersoons_col="RINPERSOONS",
+                primary_key={"RINPERSOON": "person"},
+                filter_col={"RINPERSOONS": "R"},
                 time_cols=[
                     "SDATUMAANVANGIKO",
                     "SDATUMEINDEIKO",
@@ -76,7 +76,7 @@ def main():
                     "SDATUMAANVANGIKV",
                     "SDATUMEINDEIKV",
                 ],
-                id_cols=["RINPERSOON"],
+                scondary_keys=None,
                 event_time_col="SDATUMAANVANGIKO",
                 event_time_col_fmt="%Y%m%d",
             ),
@@ -84,8 +84,8 @@ def main():
         "JOB_END": (
             "SPOLIS",
             SilverConfig(
-                rinpersoon_col="RINPERSOON",
-                rinpersoons_col="RINPERSOONS",
+                primary_key={"RINPERSOON": "person"},
+                filter_col={"RINPERSOONS": "R"},
                 time_cols=[
                     "SDATUMAANVANGIKO",
                     "SDATUMEINDEIKO",
@@ -93,7 +93,7 @@ def main():
                     "SDATUMAANVANGIKV",
                     "SDATUMEINDEIKV",
                 ],
-                id_cols=["RINPERSOON"],
+                scondary_keys=None,
                 event_time_col="SDATUMEINDEIKO",
                 event_time_col_fmt="%Y%m%d",
             ),

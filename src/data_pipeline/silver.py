@@ -21,6 +21,7 @@ from itertools import filterfalse
 from pathlib import Path
 import duckdb
 from _duckdb import DuckDBPyRelation
+from data_pipeline import silver_schema
 from data_pipeline.duckdb_base import DUCKDB_NUMERIC_TYPES
 from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SavColumnMeta
@@ -30,9 +31,6 @@ from data_pipeline.schemas import SourceManifest
 
 logger = logging.getLogger(__name__)
 
-TIME_COLNAME = "DATE"
-PERSON_COLNAME = "RINPERSOON"
-NOTE_COLNAME = "NOTE"
 
 N_SIGMA = 6
 APPROX_SD = 0.13
@@ -53,15 +51,18 @@ class SilverConfig:
 
     Arguments
     ---------
-    rinpersoon_col:
-        Column name in bronze identifying the RINPERSOON.
+    primary_key:
+        Dictionary mapping the focal ID in bronze to an entity type
+        defined in :py:data:`~data_pipeline.silver_schema.ENTITY_COLUMNS`
     rinpersoons_col:
         Column name in bronze identifying people in GBA (normally the
         `RINPERSOONS` column).
     time_cols:
         List of column names in bronze that are timestamps.
-    id_cols:
-        List of column names in bronze that are identifiers.
+    secondary_keys:
+        Dictionary mapping relational IDs in bronze to entity types
+        defined in :py:data:`~data_pipeline.silver_schema.ENTITY_COLUMNS`
+        If columns that are not used in silver, their values should be None.
     event_time_col:
         Column name in bronze identifying the TIME.
     event_time_col_fmt:
@@ -83,7 +84,7 @@ class SilverConfig:
     The config supports two uses of event time data:
         - using an existing column as the event time column. Requires specifying
         `event_time_col` and `event_time_col_fmt`.
-        - applying a new column. Requires specifying `apply_event_time` and
+        - applying a new column. Requires specifying `apply_event_time` an
         setting `event_time_col=None` and `time_cols=[]`. The latter assumes that
         the bronze file does not have any time column that needs to be dropped
         in silver.
@@ -91,20 +92,34 @@ class SilverConfig:
     These constraints are currently not enforced by the config.
     """
 
-    rinpersoon_col: str
-    rinpersoons_col: str
+    # TODO for config validation: primary_key can only have 1 entry!
+    primary_key: dict[str, str]
+    rinpersoons_col: str  # TODO: make optional/abstract from rinpersoon?
     time_cols: list[str]
-    id_cols: list[str]
+    # TODO for config validation: in the dict, also the values need to be unique!
+    secondary_keys: dict[str, str | None] | None
     event_time_col: str | None
     event_time_col_fmt: str | None = "%Y-%m-%d"
     apply_event_time: str | None = None
+
+    @property
+    def bronze_primary_key_column(self) -> str:
+        """Name of the column in the bronze file used for the primary key in silver."""
+        return next(iter(self.primary_key.keys()))
+
+    @property
+    def silver_primary_key_column(self) -> str:
+        """Name of the column in the bronze file used for the primary key in silver."""
+        entity_type = next(iter(self.primary_key.values()))
+        return silver_schema.ENTITY_COLUMNS[entity_type]
 
     @property
     def cols_to_drop(self) -> list[str]:
         """Columns to drop from the table."""
         drop_cols: list[str] = []
         drop_cols += filterfalse(lambda x: x == self.event_time_col, self.time_cols)
-        drop_cols += filterfalse(lambda x: x == self.rinpersoon_col, self.id_cols)
+        if self.secondary_keys:
+            drop_cols += [bronze_col for (bronze_col, silver_key) in self.secondary_keys.items() if silver_key is None]
         drop_cols += [self.rinpersoons_col]
         return drop_cols
 
@@ -112,8 +127,8 @@ class SilverConfig:
     def event_idx_columns(self) -> list[str | None]:
         """List of columns defining an event."""
         if self.event_time_col:
-            return [self.rinpersoon_col, self.event_time_col]
-        return [self.rinpersoon_col, TIME_COLNAME]
+            return [self.bronze_primary_key_column, self.event_time_col]
+        return [self.bronze_primary_key_column, silver_schema.TIME_COLUMN]
 
     @property
     def has_event_col(self) -> bool:
@@ -278,7 +293,7 @@ def define_event_time_col(rel: DuckDBPyRelation, config: SilverConfig, file_reco
         # TODO: task for config validation
         year = file_record.ref_period.year  # type: ignore[union-attr]
         year_col = f"{year}-{config.apply_event_time}"
-        rel = rel.select(f"""*, '{year_col}'::DATE AS {TIME_COLNAME}""")
+        rel = rel.select(f"""*, '{year_col}'::DATE AS {silver_schema.TIME_COLUMN}""")
 
     return rel
 
@@ -295,14 +310,17 @@ def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols
     attribute_cols:
         Column names of event attributes.
     """
+    # TODO: use NULL if no RELATION
     struct_query_inputs = [f"{col} := {col}" for col in attribute_cols]
     struct_query = ", ".join(struct_query_inputs)
-    time_colname_query = f"{config.event_time_col} AS {TIME_COLNAME}" if config.has_event_col else TIME_COLNAME
-    rel = rel.select(f"""{config.rinpersoon_col} AS {PERSON_COLNAME},
+    time_colname_query = (
+        f"{config.event_time_col} AS {silver_schema.TIME_COLUMN}" if config.has_event_col else silver_schema.TIME_COLUMN
+    )
+    rel = rel.select(f"""{config.bronze_primary_key_column} AS {config.silver_primary_key_column},
                      {time_colname_query},
-                     struct_pack({struct_query}) AS {NOTE_COLNAME}
+                     struct_pack({struct_query}) AS {silver_schema.NOTE_COLUMN}
                      """)
-    return rel.order(f"{PERSON_COLNAME}, {TIME_COLNAME}")
+    return rel.order(f"{config.silver_primary_key_column}, {silver_schema.TIME_COLUMN}")
 
 
 def cleanse_continuous(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]) -> DuckDBPyRelation:
@@ -441,13 +459,17 @@ def convert_to_silver(
     rel = rel.filter(f"{config.rinpersoons_col} == 'R'")
     rel = define_event_time_col(rel, config, file_record)
 
-    rel = rel.select(
-        f"* EXCLUDE({config.rinpersoon_col}), CAST({config.rinpersoon_col} AS BIGINT) AS {config.rinpersoon_col}"
+    query = (
+        f"* EXCLUDE({config.bronze_primary_key_column})"
+        f", CAST({config.bronze_primary_key_column} AS BIGINT) AS {config.bronze_primary_key_column}"
     )
+    rel = rel.select(query)
     rel = rel.select(f"* EXCLUDE ({','.join(config.cols_to_drop)})")
 
     columns = rel.columns
-    attribute_columns = filterfalse(lambda col: col in config.event_idx_columns, columns)
+    attribute_columns = filterfalse(
+        lambda col: col in config.event_idx_columns or col in config.bronze_primary_key_column, columns
+    )
     attribute_columns_meta = [
         SavColumnMeta.from_table(lookup=design_lookup | {"variable": col}, table=sav_meta_table)
         for col in attribute_columns
@@ -476,7 +498,7 @@ def convert_to_silver(
         silver_path=dest_path.parent,
         file_name=Path(dest_path.name),
         bronze_path=Path(file_record.bronze_path),  # type: ignore[arg-type]
-        bronze_id_col=config.rinpersoon_col,
+        bronze_id_col=config.bronze_primary_key_column,
         bronze_event_time_col=config.event_time_col if config.has_event_col else config.apply_event_time,  # type: ignore[arg-type]
         bronze_cols_dropped=config.cols_to_drop,
         last_modified=datetime.now(UTC),

@@ -54,9 +54,13 @@ class SilverConfig:
     primary_key:
         Dictionary mapping the focal ID in bronze to an entity type
         defined in :py:data:`~data_pipeline.silver_schema.ENTITY_COLUMNS`
-    rinpersoons_col:
-        Column name in bronze identifying people in GBA (normally the
-        `RINPERSOONS` column).
+    filter_col:
+        Dictionary mapping bronze columns that should be filtered on having
+        the corresponding value.
+        A common use case is filtering on people in GBA, ie `RINPERSOONS="R"`.
+        Currently only supports filtering on one column of string type, and
+        filtering on one value.
+        The filter column is dropped after filtering.
     time_cols:
         List of column names in bronze that are timestamps.
     secondary_keys:
@@ -94,7 +98,7 @@ class SilverConfig:
 
     # TODO for config validation: primary_key can only have 1 entry!
     primary_key: dict[str, str]
-    rinpersoons_col: str  # TODO: make optional/abstract from rinpersoon?
+    filter_col: dict[str, str] | None
     time_cols: list[str]
     # TODO for config validation: in the dict, also the values need to be unique!
     secondary_keys: dict[str, str | None] | None
@@ -120,7 +124,8 @@ class SilverConfig:
         drop_cols += filterfalse(lambda x: x == self.event_time_col, self.time_cols)
         if self.secondary_keys:
             drop_cols += [bronze_col for (bronze_col, silver_key) in self.secondary_keys.items() if silver_key is None]
-        drop_cols += [self.rinpersoons_col]
+        if self.filter_col:
+            drop_cols += [next(iter(self.filter_col.keys()))]
         return drop_cols
 
     @property
@@ -382,6 +387,18 @@ def convert_nans_to_null(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMet
     return rel
 
 
+def run_filter(rel: DuckDBPyRelation, config: SilverConfig) -> DuckDBPyRelation:
+    """Filter columns in rel based on the configuration."""
+    if config.filter_col is None:
+        return rel
+
+    column = next(iter(config.filter_col.keys()))
+    value = next(iter(config.filter_col.values()))
+
+    query = f"{column} = '{value}'"
+    return rel.filter(query)
+
+
 def convert_to_silver(
     source_manifest: SourceManifest, source_path: Path, source_filename: Path, dest_path: Path, config: SilverConfig
 ) -> SilverMetaRecord:
@@ -456,7 +473,7 @@ def convert_to_silver(
     con = duckdb.connect()
 
     rel = con.read_parquet(file_record.bronze_path)  # type: ignore[arg-type]
-    rel = rel.filter(f"{config.rinpersoons_col} == 'R'")
+    rel = run_filter(rel, config)
     rel = define_event_time_col(rel, config, file_record)
 
     query = (

@@ -16,7 +16,6 @@ from data_pipeline.schemas import SavColumnMeta
 from data_pipeline.schemas import SavMetaTable
 from data_pipeline.schemas import SourceManifest
 from data_pipeline.silver import AttributeClassifier
-from data_pipeline.silver import Filter
 from data_pipeline.silver import NoteAttributeType
 from data_pipeline.silver import SilverConfig
 from data_pipeline.silver import convert_to_silver
@@ -205,16 +204,16 @@ class TestClassifyAttributes(TestData):
 
 
 config_with_existing_time_col = SilverConfig(
-    primary_key={"person": ["RINPERSOON"]},
-    filter_col=Filter("RINPERSOONS", "R"),
+    primary_key={"person": "RINPERSOON"},
+    filter_col={"RINPERSOONS": "R"},
     time_cols=["TIME1", "TIME2"],
     drop_cols=["IRRELEVANT_ID"],
     secondary_keys=None,
     event_time_col="TIME1",
 )
 config_without_existing_time_col = SilverConfig(
-    primary_key={"person": ["RINPERSOON"]},
-    filter_col=Filter("RINPERSOONS", "R"),
+    primary_key={"person": "RINPERSOON"},
+    filter_col={"RINPERSOONS": "R"},
     time_cols=[],
     drop_cols=["IRRELEVANT_ID"],
     secondary_keys=None,
@@ -570,13 +569,13 @@ class TestMakeEventTable(TestData):
     @pytest.mark.parametrize(
         ("secondary_key_config", "expected_col_type"),
         [
-            ([{"school": ["SCHOOLID"]}, {"dwelling": ["RINOBJECTNR"]}], "struct"),
+            ([{"school": "SCHOOLID"}, {"dwelling": "RINOBJECTNR"}], "struct"),
             (None, "integer"),
         ],
         ids=["2_relations", "no_relations"],
     )
     def test_make_event_table(
-        self, db_con: DuckDBPyConnection, secondary_key_config: list[dict[str, list[str]]], expected_col_type: str
+        self, db_con: DuckDBPyConnection, secondary_key_config: list[dict[str, list[str] | str]], expected_col_type: str
     ):
         """Test make_event_table function."""
         data_dict = {
@@ -588,7 +587,7 @@ class TestMakeEventTable(TestData):
             "TIME1": self.random_dates(),
         }
         config = SilverConfig(
-            primary_key={"person": ["PERSON"]},
+            primary_key={"person": "PERSON"},
             filter_col=None,
             time_cols=["TIME1"],
             secondary_keys=secondary_key_config,

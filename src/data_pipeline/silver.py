@@ -13,12 +13,14 @@ of 3%.
 """
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
 from enum import StrEnum
 from itertools import filterfalse
 from pathlib import Path
+from typing import Self
 import duckdb
 from _duckdb import DuckDBPyRelation
 from data_pipeline import silver_schema
@@ -62,6 +64,12 @@ class Filter:
 
     column: str
     value: str
+
+    @classmethod
+    def from_dict(cls, input_dict: dict[str, str]) -> Self:
+        """Instantiate from dictionary."""
+        column, value = next(iter(input_dict.items()))
+        return cls(column, value)
 
 
 class SilverConfig:
@@ -132,9 +140,9 @@ class SilverConfig:
     # TODO: refactor with the configuration file
     def __init__(  # noqa: PLR0913, PLR0917
         self,
-        primary_key: dict[str, list[str]],
-        secondary_keys: list[dict[str, list[str]]] | None,
-        filter_col: Filter | None,
+        primary_key: dict[str, list[str] | str],
+        secondary_keys: list[dict[str, list[str] | str]] | None,
+        filter_col: dict[str, str] | None,
         time_cols: list[str],
         event_time_col: str | None,
         event_time_col_fmt: str | None = "%Y-%m-%d",
@@ -142,22 +150,21 @@ class SilverConfig:
         drop_cols: list[str] | None = None,
     ):
 
-        self.filter_col = filter_col
         self.time_cols = time_cols
         self.event_time_col = event_time_col
         self.event_time_col_fmt = event_time_col_fmt
         self.apply_event_time = apply_event_time
         self.drop_cols = drop_cols
-
-        # TODO for config validation: primary_key can only have 1 entry!
-        self.primary_key = PrimaryKeyColumn.from_dict(primary_key)
+        # TODO for config validation: dictionaries can only have 1 entry!
         # TODO for config validation: in the dict, also the values need to be unique!
+        self.filter_col = None if filter_col is None else Filter.from_dict(filter_col)
+        self.primary_key = PrimaryKeyColumn.from_dict(primary_key)
         self.secondary_keys = SecondaryKeyColumn.from_list(secondary_keys)
 
     @property
     def bronze_primary_key_columns(self) -> list[str]:
         """Name of the columns in the bronze file used for the primary key in silver."""
-        return self.primary_key.entity.bronze_columns
+        return list(self.primary_key.entity.bronze_columns)
 
     @property
     def silver_primary_key_column(self) -> str:
@@ -175,7 +182,7 @@ class SilverConfig:
         return drop_cols
 
     @property
-    def event_idx_columns(self) -> list[list[str] | str]:
+    def event_idx_columns(self) -> list[Sequence[str] | str]:
         """List of columns defining an event."""
         if self.event_time_col:
             return [self.bronze_primary_key_columns, self.event_time_col]

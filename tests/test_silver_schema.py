@@ -92,11 +92,11 @@ class TestSilverSchema:
         expected += f" AS {RELATION_COLUMN}"
         assert result == expected
 
-    @pytest.mark.parametrize("input_list", [[{"person": "RINPERSOON"}, {"school": ["school_id", "location"]}]])
+    @pytest.mark.parametrize("input_list", [{"person": "RINPERSOON", "school": ["school_id", "location"]}])
     def test_secondary_key_column_from_dict(self, input_list: list[dict[str, list[str] | str]]):
         """Test initialization from dict."""
-        from_list = SecondaryKeyColumn.from_list(input_list)
-        first, second = from_list.entities[0], from_list.entities[1]
+        from_dict = SecondaryKeyColumn.from_dict(input_list)
+        first, second = from_dict.entities[0], from_dict.entities[1]
 
         assert first.type_ == "person"
         assert first.bronze_columns == ["RINPERSOON"]

@@ -123,16 +123,15 @@ class SecondaryKeyColumn:
     entities: list[EntityKey] | None
 
     @classmethod
-    def from_list(cls, entity_list: list[dict[str, list[str] | str]] | None) -> Self:
+    def from_dict(cls, entity_dict: dict[str, list[str] | str] | None) -> Self:
         """Initiate class from list of dictionaries."""
-        if entity_list is None:
+        if entity_dict is None:
             return cls(None)
 
         entities = []
-        for entity in entity_list:  # TODO for config validation: contents of entity list is dict with 1 key!
-            type_, columns = next(iter(entity.items()))
-            columns = [columns] if isinstance(columns, str) else columns
-            entities.append(EntityKey(type_, columns))
+        for type_, columns in entity_dict.items():
+            column_list = [columns] if isinstance(columns, str) else columns
+            entities.append(EntityKey(type_, column_list))
 
         return cls(entities)
 

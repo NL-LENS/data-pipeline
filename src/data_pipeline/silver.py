@@ -28,6 +28,9 @@ from data_pipeline.schemas import SavColumnMeta
 from data_pipeline.schemas import SavMetaTable
 from data_pipeline.schemas import SilverMetaRecord
 from data_pipeline.schemas import SourceManifest
+from data_pipeline.silver_schema import NoteColumn
+from data_pipeline.silver_schema import PrimaryKeyColumn
+from data_pipeline.silver_schema import SecondaryKeyColumn
 
 logger = logging.getLogger(__name__)
 
@@ -45,15 +48,32 @@ class NoteAttributeType(StrEnum):
     CATEGORICAL = "categorical"
 
 
-@dataclass
+@dataclass(frozen=True)
+class Filter:
+    """Mapping of silver entity column to constituting bronze columns.
+
+    Arguments
+    ---------
+    column:
+        Column to filter.
+    value:
+        Filter to apply.
+    """
+
+    column: str
+    value: str
+
+
 class SilverConfig:
     """Config for silver processing.
 
     Arguments
     ---------
     primary_key:
-        Dictionary mapping the focal ID in bronze to an entity type
-        defined in :py:data:`~data_pipeline.silver_schema.ENTITY_COLUMNS`
+        One-entry dictionary where key is the entity type from the entity
+        vocabulary and the values is a string or a list of strings of
+        column names in bronze that constitute the key.
+        The bronze columns are assumed to be castable to 64-bit integer.
     filter_col:
         Dictionary mapping bronze columns that should be filtered on having
         the corresponding value.
@@ -63,13 +83,17 @@ class SilverConfig:
         The filter column is dropped after filtering.
     time_cols:
         List of column names in bronze that are timestamps.
+    drop_cols:
+        List of column names in bronze to be dropped. A common use case
+        are identifier columns that are not used in silver.
     secondary_keys:
-        Dictionary mapping relational IDs in bronze to entity types
-        defined in :py:data:`~data_pipeline.silver_schema.ENTITY_COLUMNS`
-        If columns that are not used in silver, their values should be None.
+        Dictionary where keys are entity types from the entity vocabulary.
+        Values are a string or a list of strings of constituting
+        columns from bronze.
         The bronze columns are assumed to be castable to 64-bit integer.
-        The declaration order matters for the silver data, see
-        :py:data:`data_pipeline.silver.convert_to_silver`.
+        The order of the dictionary entries as well as the
+        bronze column in the values determines the order
+        in the resulting `RELATIONS` column.
     event_time_col:
         Column name in bronze identifying the TIME.
     event_time_col_fmt:
@@ -86,7 +110,7 @@ class SilverConfig:
     Columns are dropped in silver as follows:
         - id_cols that are not rinpersoon_col.
         - time_cols that are not event_time_col.
-        - the RINPERSOONS column
+        - the filter_col column.
 
     The config supports two uses of event time data:
         - using an existing column as the event time column. Requires specifying
@@ -97,46 +121,65 @@ class SilverConfig:
         in silver.
 
     These constraints are currently not enforced by the config.
+
+    See Also
+    --------
+    :py:data:`~src.data_pipeline.silver_schema.ENTITY_COLUMNS`
+    :py:data:`~src.data_pipeline.silver.convert_to_silver`.
+
     """
 
-    # TODO for config validation: primary_key can only have 1 entry!
-    primary_key: dict[str, str]
-    filter_col: dict[str, str] | None
-    time_cols: list[str]
-    # TODO for config validation: in the dict, also the values need to be unique!
-    secondary_keys: dict[str, str | None] | None
-    event_time_col: str | None
-    event_time_col_fmt: str | None = "%Y-%m-%d"
-    apply_event_time: str | None = None
+    # TODO: refactor with the configuration file
+    def __init__(  # noqa: PLR0913, PLR0917
+        self,
+        primary_key: dict[str, list[str]],
+        secondary_keys: list[dict[str, list[str]]] | None,
+        filter_col: Filter | None,
+        time_cols: list[str],
+        event_time_col: str | None,
+        event_time_col_fmt: str | None = "%Y-%m-%d",
+        apply_event_time: str | None = None,
+        drop_cols: list[str] | None = None,
+    ):
+
+        self.filter_col = filter_col
+        self.time_cols = time_cols
+        self.event_time_col = event_time_col
+        self.event_time_col_fmt = event_time_col_fmt
+        self.apply_event_time = apply_event_time
+        self.drop_cols = drop_cols
+
+        # TODO for config validation: primary_key can only have 1 entry!
+        self.primary_key = PrimaryKeyColumn.from_dict(primary_key)
+        # TODO for config validation: in the dict, also the values need to be unique!
+        self.secondary_keys = SecondaryKeyColumn.from_list(secondary_keys)
 
     @property
-    def bronze_primary_key_column(self) -> str:
-        """Name of the column in the bronze file used for the primary key in silver."""
-        return next(iter(self.primary_key.keys()))
+    def bronze_primary_key_columns(self) -> list[str]:
+        """Name of the columns in the bronze file used for the primary key in silver."""
+        return self.primary_key.entity.bronze_columns
 
     @property
     def silver_primary_key_column(self) -> str:
         """Name of the column in the bronze file used for the primary key in silver."""
-        entity_type = next(iter(self.primary_key.values()))
-        return silver_schema.ENTITY_COLUMNS[entity_type]
+        return self.primary_key.silver_column
 
     @property
     def cols_to_drop(self) -> list[str]:
         """Columns to drop from the table."""
-        drop_cols: list[str] = []
+        drop_cols = list(self.drop_cols or [])
         drop_cols += filterfalse(lambda x: x == self.event_time_col, self.time_cols)
-        if self.secondary_keys:
-            drop_cols += [bronze_col for (bronze_col, silver_key) in self.secondary_keys.items() if silver_key is None]
+
         if self.filter_col:
-            drop_cols += [next(iter(self.filter_col.keys()))]
+            drop_cols += [self.filter_col.column]
         return drop_cols
 
     @property
-    def event_idx_columns(self) -> list[str | None]:
+    def event_idx_columns(self) -> list[list[str] | str]:
         """List of columns defining an event."""
         if self.event_time_col:
-            return [self.bronze_primary_key_column, self.event_time_col]
-        return [self.bronze_primary_key_column, silver_schema.TIME_COLUMN]
+            return [self.bronze_primary_key_columns, self.event_time_col]
+        return [self.bronze_primary_key_columns, silver_schema.TIME_COLUMN]
 
     @property
     def has_event_col(self) -> bool:
@@ -162,9 +205,9 @@ class AttributeClassifier:
     In practice, attributes are sequentially classified as:
         - continuous if their metadata has no value label
         - continuous if the approximate count of unique
-        values is more than :py:data:`~data_pipeline.silver.N_SIGMA`
+        values is more than :py:data:`~src.data_pipeline.silver.N_SIGMA`
         standard deviations of the reference cardinality. The standard deviation
-        is assumed to be :py:data:`~data_pipeline.silver.APPROX_SD` of the
+        is assumed to be :py:data:`~src.data_pipeline.silver.APPROX_SD` of the
         reference cardinality in the metadata, which is conservative.
         - continuous if the column is of numeric type and has all NaNs.
         - categorical if the exact count of unique values is less or equal the
@@ -308,46 +351,6 @@ def define_event_time_column(
     return rel
 
 
-def _make_struct_query(inputs: list[str] | dict[str, str | None] | None) -> str:
-    """Create a struct query from an iterable input.
-
-    Arguments
-    ---------
-        inputs: A list or a dictionary.
-        If it is a list, the list entries need to be
-        column names, and the resulting struct has the same keys as the original
-        columns.
-        If it is a dictionary, it should be key-value pairs as specified
-        in the secondary_keys field of SilverConfig.
-
-    Returns
-    -------
-        A string that can be plugged into a sql query for DuckDB:
-            - If the input is None, it is just NULL.
-            - Otherwise, it is of the form `struct_pack(key: col)` where `key`
-            is the new struct key and `col` is the original column in the input
-            relation.
-    """
-    match inputs:
-        case _ if isinstance(inputs, list):
-            query_inputs = [f"{col} := {col}" for col in inputs]
-        case _ if isinstance(inputs, dict):
-            query_inputs = [
-                f"{silver_schema.ENTITY_COLUMNS[silver_entity]} := {bronze_col}"
-                for (bronze_col, silver_entity) in inputs.items()
-                if silver_entity is not None
-            ]
-        case None:
-            query_inputs = []
-        case _:
-            msg = f"Unexpected input: {inputs}"
-            raise NotImplementedError(msg)
-
-    if len(query_inputs) == 0:
-        return "NULL"
-    return f"struct_pack({','.join(query_inputs)})"
-
-
 def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols: list[str]) -> DuckDBPyRelation:
     """Transform a relation into the event-table format.
 
@@ -360,17 +363,16 @@ def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols
     attribute_cols:
         Column names of event attributes.
     """
-    struct_query_for_note = _make_struct_query(attribute_cols)
-    struct_query_for_relation = _make_struct_query(config.secondary_keys)
+    note_column = NoteColumn(attribute_cols)
+    note_query = note_column.event_table_query()
+
+    relations_query = config.secondary_keys.event_table_query()
+    primary_key_query = config.primary_key.event_table_query()
+
     time_colname_query = (
         f"{config.event_time_col} AS {silver_schema.TIME_COLUMN}" if config.has_event_col else silver_schema.TIME_COLUMN
     )
-    rel = rel.select(
-        f"{config.bronze_primary_key_column} AS {config.silver_primary_key_column}, "
-        f"{time_colname_query}, "
-        f"{struct_query_for_relation} AS {silver_schema.RELATION_COLUMN}, "
-        f"{struct_query_for_note} AS {silver_schema.NOTE_COLUMN}"
-    )
+    rel = rel.select(f"{primary_key_query}, {time_colname_query}, {relations_query}, {note_query}")
     return rel.order(
         f"{config.silver_primary_key_column}, {silver_schema.TIME_COLUMN}, {silver_schema.RELATION_COLUMN}"
     )
@@ -443,22 +445,15 @@ def run_filter(rel: DuckDBPyRelation, config: SilverConfig) -> DuckDBPyRelation:
     if config.filter_col is None:
         return rel
 
-    column = next(iter(config.filter_col.keys()))
-    value = next(iter(config.filter_col.values()))
-
-    query = f"{column} = '{value}'"
+    query = f"{config.filter_col.column} = '{config.filter_col.value}'"
     return rel.filter(query)
 
 
 def cast_identifier_columns(rel: DuckDBPyRelation, config: SilverConfig) -> DuckDBPyRelation:
     """Cast all identifiers required for silver to BIGINT."""
-    columns_to_cast = [config.bronze_primary_key_column]
-    if config.secondary_keys is not None:
-        columns_to_cast += [
-            bronze_column
-            for (bronze_column, silver_entity) in config.secondary_keys.items()
-            if silver_entity is not None
-        ]
+    columns_to_cast = config.bronze_primary_key_columns
+    if config.secondary_keys.bronze_columns is not None:
+        columns_to_cast += config.secondary_keys.bronze_columns
 
     cast_query = [f"CAST({column} AS BIGINT) AS {column}" for column in columns_to_cast]
     full_query = f"* EXCLUDE({','.join(columns_to_cast)}), {','.join(cast_query)}"
@@ -498,14 +493,14 @@ def convert_to_silver(
     No column for the event type is created; this should be specified
     in the location where the file is stored, using hive partitioning.
 
-    The function processes data, using the column configuration from :py:data:`data_pipeline.silver.SilverConfig`:
+    The function processes data, using the column configuration from :py:data:`~src.data_pipeline.silver.SilverConfig`:
         1. Drops rows based on filter_col in the configuration
         2. Drops columns per the configuration
         3. All columns that are not dropped, not person/time identifier, become
         NOTE attributes. The type of the attribute -- continuous or categorical --
         is inferred from the column's distribution and cardinality, compared to
         the one declared in the metadata.
-        See :py:data:`~data_pipeline.silver.AttributeClassifier`.
+        See :py:data:`~src.data_pipeline.silver.AttributeClassifier`.
         4. In continuous NOTE attributes, declared missing values are converted to NULL.
 
     The output table is ordered by:
@@ -550,10 +545,9 @@ def convert_to_silver(
     rel = cast_identifier_columns(rel, config)
 
     rel = rel.select(f"* EXCLUDE ({','.join(config.cols_to_drop)})")
-
     columns = rel.columns
     attribute_columns = filterfalse(
-        lambda col: col in config.event_idx_columns or col in config.bronze_primary_key_column, columns
+        lambda col: col in config.event_idx_columns or col in config.bronze_primary_key_columns, columns
     )
     attribute_columns_meta = [
         SavColumnMeta.from_table(lookup=design_lookup | {"variable": col}, table=sav_meta_table)
@@ -583,7 +577,7 @@ def convert_to_silver(
         silver_path=dest_path.parent,
         file_name=Path(dest_path.name),
         bronze_path=Path(file_record.bronze_path),  # type: ignore[arg-type]
-        bronze_id_col=config.bronze_primary_key_column,
+        bronze_id_col=config.bronze_primary_key_columns,
         bronze_event_time_col=config.event_time_col if config.has_event_col else config.apply_event_time,  # type: ignore[arg-type]
         bronze_cols_dropped=config.cols_to_drop,
         last_modified=datetime.now(UTC),

@@ -16,6 +16,7 @@ from data_pipeline.schemas import SavColumnMeta
 from data_pipeline.schemas import SavMetaTable
 from data_pipeline.schemas import SourceManifest
 from data_pipeline.silver import AttributeClassifier
+from data_pipeline.silver import Filter
 from data_pipeline.silver import NoteAttributeType
 from data_pipeline.silver import SilverConfig
 from data_pipeline.silver import convert_to_silver
@@ -204,17 +205,19 @@ class TestClassifyAttributes(TestData):
 
 
 config_with_existing_time_col = SilverConfig(
-    primary_key={"RINPERSOON": "person"},
-    filter_col={"RINPERSOONS": "R"},
+    primary_key={"person": ["RINPERSOON"]},
+    filter_col=Filter("RINPERSOONS", "R"),
     time_cols=["TIME1", "TIME2"],
-    secondary_keys={"IRRELEVANT_ID": None},
+    drop_cols=["IRRELEVANT_ID"],
+    secondary_keys=None,
     event_time_col="TIME1",
 )
 config_without_existing_time_col = SilverConfig(
-    primary_key={"RINPERSOON": "person"},
-    filter_col={"RINPERSOONS": "R"},
+    primary_key={"person": ["RINPERSOON"]},
+    filter_col=Filter("RINPERSOONS", "R"),
     time_cols=[],
-    secondary_keys={"IRRELEVANT_ID": None},
+    drop_cols=["IRRELEVANT_ID"],
+    secondary_keys=None,
     event_time_col=None,
     event_time_col_fmt=None,
     apply_event_time="01-01",
@@ -478,7 +481,7 @@ class TestSilver(TestData):
         table.insert_many(column_list)
 
     @pytest.mark.usefixtures("metadata_db")
-    def test_silver(
+    def test_convert_to_silver(
         self,
         db_con: DuckDBPyConnection,
         db_file: Path,
@@ -565,16 +568,15 @@ class TestMakeEventTable(TestData):
     """Class for testing making the event table."""
 
     @pytest.mark.parametrize(
-        ("secondary_key_config", "expected_relation_type"),
+        ("secondary_key_config", "expected_col_type"),
         [
-            ({"SCHOOLID": "school", "RINOBJECTNR": "dwelling"}, "struct"),
-            ({"SCHOOLID": None, "RINOBJECTNR": None}, "integer"),
+            ([{"school": ["SCHOOLID"]}, {"dwelling": ["RINOBJECTNR"]}], "struct"),
             (None, "integer"),
         ],
-        ids=["2_relations", "no_mapping", "no_relations"],
+        ids=["2_relations", "no_relations"],
     )
     def test_make_event_table(
-        self, db_con: DuckDBPyConnection, secondary_key_config: dict[str, str | None], expected_relation_type: str
+        self, db_con: DuckDBPyConnection, secondary_key_config: list[dict[str, list[str]]], expected_col_type: str
     ):
         """Test make_event_table function."""
         data_dict = {
@@ -586,7 +588,7 @@ class TestMakeEventTable(TestData):
             "TIME1": self.random_dates(),
         }
         config = SilverConfig(
-            primary_key={"PERSON": "person"},
+            primary_key={"person": ["PERSON"]},
             filter_col=None,
             time_cols=["TIME1"],
             secondary_keys=secondary_key_config,
@@ -604,7 +606,7 @@ class TestMakeEventTable(TestData):
             silver_schema.NOTE_COLUMN,
         ]
         assert result.columns == expected_columns, "Incorrect columns"
-        expected_types = ["bigint", "date", expected_relation_type, "struct"]
+        expected_types = ["bigint", "date", expected_col_type, "struct"]
         col_types = [t.id for t in result.types]
         assert col_types == expected_types, "Wrong column types"
 
@@ -613,7 +615,7 @@ class TestMakeEventTable(TestData):
         )
         pl.testing.assert_frame_equal(ordered_result.pl(), result.pl())
 
-        if expected_relation_type == "struct":
+        if expected_col_type == "struct":
             fields, types = get_struct_fields_and_types(result, silver_schema.RELATION_COLUMN)
 
             assert fields == [silver_schema.ENTITY_COLUMNS["school"], silver_schema.ENTITY_COLUMNS["dwelling"]], (

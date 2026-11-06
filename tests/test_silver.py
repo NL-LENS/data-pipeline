@@ -5,22 +5,32 @@ from datetime import UTC
 from datetime import datetime
 from pathlib import Path
 import duckdb
+import duckdb.sqltypes
 import numpy as np
 import polars as pl
 import pytest
 from _duckdb import DuckDBPyConnection
+from data_pipeline import silver_schema
 from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SavColumnMeta
 from data_pipeline.schemas import SavMetaTable
 from data_pipeline.schemas import SourceManifest
-from data_pipeline.silver import NOTE_COLNAME
-from data_pipeline.silver import PERSON_COLNAME
-from data_pipeline.silver import TIME_COLNAME
 from data_pipeline.silver import AttributeClassifier
 from data_pipeline.silver import NoteAttributeType
 from data_pipeline.silver import SilverConfig
 from data_pipeline.silver import convert_to_silver
+from data_pipeline.silver import make_event_table
 from .conftest import TestData
+
+
+def get_struct_fields_and_types(
+    rel: duckdb.DuckDBPyRelation, column: str
+) -> tuple[list[str], list[duckdb.sqltypes.DuckDBPyType | int | list[str]]]:
+    """Get the fields and types from a struct column in a DuckDBPyRelation."""
+    fields_and_types = rel.select(column).types[0].children
+    fields = [x[0] for x in fields_and_types]
+    types = [x[1] for x in fields_and_types]
+    return fields, types
 
 
 @pytest.fixture
@@ -194,17 +204,19 @@ class TestClassifyAttributes(TestData):
 
 
 config_with_existing_time_col = SilverConfig(
-    rinpersoon_col="RINPERSOON",
-    rinpersoons_col="RINPERSOONS",
+    primary_key={"person": "RINPERSOON"},
+    filter_col={"RINPERSOONS": "R"},
     time_cols=["TIME1", "TIME2"],
-    id_cols=["RINPERSOON", "IRRELEVANT_ID"],
+    drop_cols=["IRRELEVANT_ID"],
+    secondary_keys=None,
     event_time_col="TIME1",
 )
 config_without_existing_time_col = SilverConfig(
-    rinpersoon_col="RINPERSOON",
-    rinpersoons_col="RINPERSOONS",
+    primary_key={"person": "RINPERSOON"},
+    filter_col={"RINPERSOONS": "R"},
     time_cols=[],
-    id_cols=["RINPERSOON", "IRRELEVANT_ID"],
+    drop_cols=["IRRELEVANT_ID"],
+    secondary_keys=None,
     event_time_col=None,
     event_time_col_fmt=None,
     apply_event_time="01-01",
@@ -468,7 +480,14 @@ class TestSilver(TestData):
         table.insert_many(column_list)
 
     @pytest.mark.usefixtures("metadata_db")
-    def test_silver(self, db_file: Path, input_paths: dict[str, Path], tmp_path: Path, config: SilverConfig):
+    def test_convert_to_silver(
+        self,
+        db_con: DuckDBPyConnection,
+        db_file: Path,
+        input_paths: dict[str, Path],
+        tmp_path: Path,
+        config: SilverConfig,
+    ):
         """Test conversion of bronze to silver."""
         self.create_bronze_data(input_paths, config)
         dest_path = tmp_path / "silver.parquet"
@@ -483,38 +502,39 @@ class TestSilver(TestData):
             config=config,
         )
 
-        con = duckdb.connect()
-
         silver_df = (
             pl.read_parquet(input_paths["bronze_file"]).filter(self.validity_mask == 1).cast({"RINPERSOON": pl.Int64})
         )
 
         if config.event_time_col:
-            silver_df = silver_df.with_columns(pl.col("TIME1").str.to_date().alias(TIME_COLNAME))
+            silver_df = silver_df.with_columns(pl.col("TIME1").str.to_date().alias(silver_schema.TIME_COLUMN))
         else:
             year_col = f"{self.bronze_ref_year}-{config.apply_event_time}"
-            silver_df = silver_df.with_columns(pl.lit(year_col).str.to_date().alias(TIME_COLNAME))
+            silver_df = silver_df.with_columns(pl.lit(year_col).str.to_date().alias(silver_schema.TIME_COLUMN))
 
-        silver_df = silver_df.sort(by=["RINPERSOON", TIME_COLNAME])
+        silver_df = silver_df.sort(by=["RINPERSOON", silver_schema.TIME_COLUMN])
 
-        rel = con.read_parquet(dest_path)
+        rel = db_con.read_parquet(dest_path)
 
-        expected_columns = [PERSON_COLNAME, TIME_COLNAME, NOTE_COLNAME]
+        expected_columns = [
+            silver_schema.ENTITY_COLUMNS["person"],
+            silver_schema.TIME_COLUMN,
+            silver_schema.RELATION_COLUMN,
+            silver_schema.NOTE_COLUMN,
+        ]
         assert rel.columns == expected_columns, "Incorrect columns"
 
-        expected_types = ["bigint", "date", "struct"]
+        expected_types = ["bigint", "date", "integer", "struct"]
         col_types = [t.id for t in rel.types]
         assert col_types == expected_types, "Wrong column types"
 
         assert silver_df.shape[0] == rel.shape[0], "Wrong number of rows"
 
-        (
-            pl.testing.assert_frame_equal(silver_df.select(TIME_COLNAME), rel.select(TIME_COLNAME).pl()),
-            "Rows out of order",
+        pl.testing.assert_frame_equal(
+            silver_df.select(silver_schema.TIME_COLUMN), rel.select(silver_schema.TIME_COLUMN).pl()
         )
 
-        note_fields_and_types = rel.select(NOTE_COLNAME).types[0].children
-        note_fields = [x[0] for x in note_fields_and_types]
+        fields, _ = get_struct_fields_and_types(rel, silver_schema.NOTE_COLUMN)
         expected_fields = {
             "CONTINUOUS_ATTR1",
             "CONTINUOUS_ATTR2",
@@ -525,7 +545,7 @@ class TestSilver(TestData):
             "CAT_ATTR1",
             "CAT_ATTR2",
         }
-        assert expected_fields == set(note_fields), "Note has incorrect fields."
+        assert expected_fields == set(fields), "Note has incorrect fields."
 
         continuous_cols_missing_frac = {
             "CONTINUOUS_ATTR1": lambda x: x > 0,
@@ -542,4 +562,69 @@ class TestSilver(TestData):
             )
             assert comparison_func(avg_null), f"Missing values incorrectly coded for {col}"
 
-        con.close()
+
+class TestMakeEventTable(TestData):
+    """Class for testing making the event table."""
+
+    @pytest.mark.parametrize(
+        ("secondary_key_config", "expected_col_type"),
+        [
+            ({"school": "SCHOOLID", "dwelling": "RINOBJECTNR"}, "struct"),
+            (None, "integer"),
+        ],
+        ids=["2_relations", "no_relations"],
+    )
+    def test_make_event_table(
+        self, db_con: DuckDBPyConnection, secondary_key_config: dict[str, list[str] | str], expected_col_type: str
+    ):
+        """Test make_event_table function."""
+        data_dict = {
+            "PERSON": self.make_identifiers().astype(np.int64),
+            "SCHOOLID": self.make_identifiers(500).astype(np.int64),
+            "RINOBJECTNR": self.make_identifiers(300_000).astype(np.int64),
+            "ATTR1": self.make_continuous(),
+            "ATTR2": self.make_categorical(["a", "b", "c", "missing"], [0.1, 0.6, 0.2, 0.1]),
+            "TIME1": self.random_dates(),
+        }
+        config = SilverConfig(
+            primary_key={"person": "PERSON"},
+            filter_col=None,
+            time_cols=["TIME1"],
+            secondary_keys=secondary_key_config,
+            event_time_col="TIME1",
+        )
+
+        rel = db_con.from_arrow(pl.DataFrame(data_dict).to_arrow())
+        attribute_cols = ["ATTR1", "ATTR2"]
+
+        result = make_event_table(rel, config, attribute_cols)
+        expected_columns = [
+            silver_schema.ENTITY_COLUMNS["person"],
+            silver_schema.TIME_COLUMN,
+            silver_schema.RELATION_COLUMN,
+            silver_schema.NOTE_COLUMN,
+        ]
+        assert result.columns == expected_columns, "Incorrect columns"
+        expected_types = ["bigint", "date", expected_col_type, "struct"]
+        col_types = [t.id for t in result.types]
+        assert col_types == expected_types, "Wrong column types"
+
+        ordered_result = result.order(
+            f"{silver_schema.ENTITY_COLUMNS['person']}, {silver_schema.TIME_COLUMN}, {silver_schema.RELATION_COLUMN}"
+        )
+        pl.testing.assert_frame_equal(ordered_result.pl(), result.pl())
+
+        if expected_col_type == "struct":
+            fields, types = get_struct_fields_and_types(result, silver_schema.RELATION_COLUMN)
+
+            assert fields == [silver_schema.ENTITY_COLUMNS["school"], silver_schema.ENTITY_COLUMNS["dwelling"]], (
+                f"wrong fields for {silver_schema.RELATION_COLUMN} column"
+            )
+            assert types == [duckdb.sqltypes.DuckDBPyType(int), duckdb.sqltypes.DuckDBPyType(int)], (
+                f"wrong types for {silver_schema.RELATION_COLUMN} column"
+            )
+        else:
+            rows_with_null_relations = result.filter(f"{silver_schema.RELATION_COLUMN} IS NULL")
+            assert rows_with_null_relations.shape[0] == rel.shape[0], (
+                f"Not all rows of {silver_schema.RELATION_COLUMN} are NULL"
+            )

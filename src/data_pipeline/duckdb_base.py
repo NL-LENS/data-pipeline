@@ -262,6 +262,7 @@ class DuckDBRecord:
             datetime: "TIMESTAMPTZ",
             float: "FLOAT",
             dict: "JSON",
+            dict[str, list[str]]: "MAP(VARCHAR, VARCHAR[])",  # from duckdb.sqltypes.DuckDBPyType
             Path: "VARCHAR",
             DuckDBBigInt: "BIGINT",
             DuckDBDouble: "DOUBLE",

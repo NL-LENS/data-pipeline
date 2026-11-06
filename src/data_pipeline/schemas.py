@@ -140,9 +140,12 @@ class SilverMetaRecord(DuckDBRecord):
         Path to the bronze file used for creating the silver file.
     last_modified:
         Timestamp of the last modification of the silver file.]
-    bronze_id_col:
-        Column in bronze file used to define the primary identifier in the silver
+    bronze_primary_key_cols:
+        List of columns in bronze file used to define the primary key in the silver
         file.
+    bronze_secondary_key_cols:
+        Dictionary of entity types to list of columns in bronze file
+        used to define the secondary key in the silver file.
     bronze_event_time_col:
         Column in the bronze file used to define the time column in the
         silver file.
@@ -160,7 +163,8 @@ class SilverMetaRecord(DuckDBRecord):
     # TODO: FK needs to refer to a column with a UNIQUE constraint
     bronze_path: Path  # = field(metadata={"foreign_key": {"table": "source_manifest", "column": "bronze_path"}})
     last_modified: datetime
-    bronze_id_col: str
+    bronze_primary_key_cols: list[str]
+    bronze_secondary_key_cols: dict[str, list[str]] | None
     bronze_event_time_col: str
     bronze_cols_dropped: list[str]
     event_note_types: dict[str, str]

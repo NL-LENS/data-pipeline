@@ -22,11 +22,21 @@ class TestSilverSchema:
         ],
         ids=["single_key", "composite_key"],
     )
-    def test_primary_key(self, entity: EntityKey, expected: str):
+    def test_primary_key_column(self, entity: EntityKey, expected: str):
         """Test creation of primary key column."""
         column = PrimaryKeyColumn(entity)
         result = column.event_table_query()
         assert result == expected
+
+    @pytest.mark.parametrize("input_dict", [{"person": "RINPERSOON"}, {"school": ["school_id", "location"]}])
+    def test_primary_key_column_from_dict(self, input_dict: dict[str, list[str] | str]):
+        """Test initialization from dict."""
+        from_dict = PrimaryKeyColumn.from_dict(input_dict)
+        type_, columns = next(iter(input_dict.items()))
+        columns = [columns] if isinstance(columns, str) else columns
+        direct = PrimaryKeyColumn(EntityKey(type_=type_, bronze_columns=columns))
+
+        assert direct == from_dict
 
     def test_note_column(self):
         """Test creation of note column."""
@@ -81,3 +91,15 @@ class TestSilverSchema:
         result = column.event_table_query()
         expected += f" AS {RELATION_COLUMN}"
         assert result == expected
+
+    @pytest.mark.parametrize("input_list", [[{"person": "RINPERSOON"}, {"school": ["school_id", "location"]}]])
+    def test_secondary_key_column_from_dict(self, input_list: list[dict[str, list[str] | str]]):
+        """Test initialization from dict."""
+        from_list = SecondaryKeyColumn.from_list(input_list)
+        first, second = from_list.entities[0], from_list.entities[1]
+
+        assert first.type_ == "person"
+        assert first.bronze_columns == ["RINPERSOON"]
+
+        assert second.type_ == "school"
+        assert second.bronze_columns == ["school_id", "location"]

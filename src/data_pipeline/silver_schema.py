@@ -1,5 +1,6 @@
 """Column names for the silver layer."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Self
@@ -15,6 +16,7 @@ ENTITY_COLUMNS: MappingProxyType[str, str] = MappingProxyType(
         "company": "COMPANY_ID",
         "school": "SCHOOL_ID",
         "dwelling": "DWELLING_ID",
+        "household": "HOUSEHOLD_ID",
         "municipality": "MUNICIPALITY_ID",
         "job": "JOB_ID",
     }
@@ -36,7 +38,7 @@ class EntityKey:
     """
 
     type_: str
-    bronze_columns: list[str]
+    bronze_columns: Sequence[str]
 
     def make_query(self) -> str:
         """Make struct query for defining this silver entity."""
@@ -88,12 +90,12 @@ class PrimaryKeyColumn:
         return ENTITY_COLUMNS[self.entity.type_]
 
     @property
-    def bronze_columns(self) -> list[str]:
+    def bronze_columns(self) -> Sequence[str]:
         """Return constituting bronze columns."""
         return self.entity.bronze_columns
 
     @classmethod
-    def from_dict(cls, entity_dict: dict[str, list[str]]) -> Self:
+    def from_dict(cls, entity_dict: dict[str, list[str] | str]) -> Self:
         """Create instance from dictionary."""
         if len(list(entity_dict.keys())) > 1:
             msg = "Primary key can only be one entity."
@@ -101,6 +103,7 @@ class PrimaryKeyColumn:
 
         type_ = next(iter(entity_dict.keys()))
         columns = next(iter(entity_dict.values()))
+        columns = [columns] if isinstance(columns, str) else columns
         return cls(EntityKey(type_=type_, bronze_columns=columns))
 
     def event_table_query(self) -> str:
@@ -120,12 +123,18 @@ class SecondaryKeyColumn:
     entities: list[EntityKey] | None
 
     @classmethod
-    def from_list(cls, entity_list: list[dict[str, list[str]]] | None) -> Self:
-        """Create class from list of dictionaries."""
+    def from_list(cls, entity_list: list[dict[str, list[str] | str]] | None) -> Self:
+        """Initiate class from list of dictionaries."""
         if entity_list is None:
             return cls(None)
 
-        return cls([EntityKey(type_, columns) for entity in entity_list for (type_, columns) in entity.items()])
+        entities = []
+        for entity in entity_list:  # TODO for config validation: contents of entity list is dict with 1 key!
+            type_, columns = next(iter(entity.items()))
+            columns = [columns] if isinstance(columns, str) else columns
+            entities.append(EntityKey(type_, columns))
+
+        return cls(entities)
 
     @property
     def silver_column(self) -> str:

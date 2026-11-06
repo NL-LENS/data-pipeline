@@ -584,7 +584,8 @@ def convert_to_silver(
         silver_path=dest_path.parent,
         file_name=Path(dest_path.name),
         bronze_path=Path(file_record.bronze_path),  # type: ignore[arg-type]
-        bronze_id_col=config.bronze_primary_key_columns,
+        bronze_primary_key_cols=config.bronze_primary_key_columns,
+        bronze_secondary_key_cols=config.secondary_keys.to_dict(),
         bronze_event_time_col=config.event_time_col if config.has_event_col else config.apply_event_time,  # type: ignore[arg-type]
         bronze_cols_dropped=config.cols_to_drop,
         last_modified=datetime.now(UTC),

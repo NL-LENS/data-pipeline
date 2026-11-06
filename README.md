@@ -56,10 +56,11 @@ def main():
         "INPA": (
             "INPA",
             SilverConfig(
-                primary_key={"RINPERSOON": "person"},
+                primary_key={"person": "RINPERSOON"},
                 filter_col={"RINPERSOONS": "R"},
                 time_cols=[],
-                secondary_keys={"RINPERSOONHKW": None},
+                drop_cols=["RINPERSOONHKW"],
+                secondary_keys=None,
                 event_time_col=None,
                 apply_event_time="01-01",
             ),
@@ -67,7 +68,7 @@ def main():
         "JOB_START": (
             "SPOLIS",
             SilverConfig(
-                primary_key={"RINPERSOON": "person"},
+                primary_key={"person": "RINPERSOON"},
                 filter_col={"RINPERSOONS": "R"},
                 time_cols=[
                     "SDATUMAANVANGIKO",
@@ -84,7 +85,7 @@ def main():
         "JOB_END": (
             "SPOLIS",
             SilverConfig(
-                primary_key={"RINPERSOON": "person"},
+                primary_key={"person": "RINPERSOON"},
                 filter_col={"RINPERSOONS": "R"},
                 time_cols=[
                     "SDATUMAANVANGIKO",

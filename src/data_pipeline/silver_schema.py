@@ -157,3 +157,9 @@ class SecondaryKeyColumn:
         query_list = [f"{ENTITY_COLUMNS[entity.type_]} := {entity.make_query()}" for entity in self.entities]
 
         return f"struct_pack({', '.join(query_list)}) AS {RELATION_COLUMN}"
+
+    def to_dict(self) -> dict[str, list[str]] | None:
+        """Return a dict of entitye type to bronze columns used."""
+        if self.entities is None:
+            return None
+        return {e.type_: list(e.bronze_columns) for e in self.entities}

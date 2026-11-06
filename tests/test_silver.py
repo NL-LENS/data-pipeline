@@ -569,13 +569,13 @@ class TestMakeEventTable(TestData):
     @pytest.mark.parametrize(
         ("secondary_key_config", "expected_col_type"),
         [
-            ([{"school": "SCHOOLID"}, {"dwelling": "RINOBJECTNR"}], "struct"),
+            ({"school": "SCHOOLID", "dwelling": "RINOBJECTNR"}, "struct"),
             (None, "integer"),
         ],
         ids=["2_relations", "no_relations"],
     )
     def test_make_event_table(
-        self, db_con: DuckDBPyConnection, secondary_key_config: list[dict[str, list[str] | str]], expected_col_type: str
+        self, db_con: DuckDBPyConnection, secondary_key_config: dict[str, list[str] | str], expected_col_type: str
     ):
         """Test make_event_table function."""
         data_dict = {

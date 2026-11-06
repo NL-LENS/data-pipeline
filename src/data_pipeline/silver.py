@@ -141,7 +141,7 @@ class SilverConfig:
     def __init__(  # noqa: PLR0913, PLR0917
         self,
         primary_key: dict[str, list[str] | str],
-        secondary_keys: list[dict[str, list[str] | str]] | None,
+        secondary_keys: dict[str, list[str] | str] | None,
         filter_col: dict[str, str] | None,
         time_cols: list[str],
         event_time_col: str | None,
@@ -159,7 +159,7 @@ class SilverConfig:
         # TODO for config validation: in the dict, also the values need to be unique!
         self.filter_col = None if filter_col is None else Filter.from_dict(filter_col)
         self.primary_key = PrimaryKeyColumn.from_dict(primary_key)
-        self.secondary_keys = SecondaryKeyColumn.from_list(secondary_keys)
+        self.secondary_keys = SecondaryKeyColumn.from_dict(secondary_keys)
 
     @property
     def bronze_primary_key_columns(self) -> list[str]:

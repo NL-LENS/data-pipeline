@@ -17,7 +17,7 @@ python -m pip install 'data-pipeline @ git+https://github.com/NL-LENS/data-pipel
 lens init --db_file lens.duckdb --root G:/
 lens build bronze \
   --db_file lens.duckdb \
-  --source_regex INPATAB \
+  --source_regex INPA \
   --ref_period 2015 2020 \
   --dest_dir data_processed/bronze/inpa
 
@@ -77,7 +77,7 @@ def main():
                     "SDATUMAANVANGIKV",
                     "SDATUMEINDEIKV",
                 ],
-                scondary_keys=None,
+                secondary_keys=None,
                 event_time_col="SDATUMAANVANGIKO",
                 event_time_col_fmt="%Y%m%d",
             ),
@@ -94,7 +94,7 @@ def main():
                     "SDATUMAANVANGIKV",
                     "SDATUMEINDEIKV",
                 ],
-                scondary_keys=None,
+                secondary_keys=None,
                 event_time_col="SDATUMEINDEIKO",
                 event_time_col_fmt="%Y%m%d",
             ),

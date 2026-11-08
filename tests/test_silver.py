@@ -221,12 +221,24 @@ config_without_existing_time_col = SilverConfig(
     event_time_col_fmt=None,
     apply_event_time="01-01",
 )
+config_with_composite_primary_key = SilverConfig(
+    primary_key={"person": ["RINPERSOON", "RINPERSOONS"]},
+    filter_col=None,
+    time_cols=["TIME1", "TIME2"],
+    drop_cols=["IRRELEVANT_ID"],
+    secondary_keys=None,
+    event_time_col="TIME1",
+)
 
 
 @pytest.mark.parametrize(
-    "config",
-    [(config_with_existing_time_col), (config_without_existing_time_col)],
-    ids=["use_existing_time_col", "make_new_time_col"],
+    ("config", "expected_primary_key_type"),
+    [
+        (config_with_existing_time_col, "bigint"),
+        (config_without_existing_time_col, "bigint"),
+        (config_with_composite_primary_key, "struct"),
+    ],
+    ids=["use_existing_time_col", "make_new_time_col", "primary_key_with_enum"],
 )
 class TestSilver(TestData):
     """Class for testing bronze->silver conversion."""
@@ -282,8 +294,9 @@ class TestSilver(TestData):
             size=int(0.03 * self.sample_size),
         )
 
+        rinpersoons_valid = "RINPERSOONS" in config.bronze_primary_key_columns
         data_dict["RINPERSOONS"] = self.corrupt(
-            x=data_dict["RINPERSOONS"], inject=["not_R"], size=int(0.05 * self.sample_size), valid=False
+            x=data_dict["RINPERSOONS"], inject=["not_R"], size=int(0.05 * self.sample_size), valid=rinpersoons_valid
         )
 
         if config.event_time_col:
@@ -480,13 +493,14 @@ class TestSilver(TestData):
         table.insert_many(column_list)
 
     @pytest.mark.usefixtures("metadata_db")
-    def test_convert_to_silver(
+    def test_convert_to_silver(  # noqa: PLR0913, PLR0917
         self,
         db_con: DuckDBPyConnection,
         db_file: Path,
         input_paths: dict[str, Path],
         tmp_path: Path,
         config: SilverConfig,
+        expected_primary_key_type: str,
     ):
         """Test conversion of bronze to silver."""
         self.create_bronze_data(input_paths, config)
@@ -512,7 +526,8 @@ class TestSilver(TestData):
             year_col = f"{self.bronze_ref_year}-{config.apply_event_time}"
             silver_df = silver_df.with_columns(pl.lit(year_col).str.to_date().alias(silver_schema.TIME_COLUMN))
 
-        silver_df = silver_df.sort(by=["RINPERSOON", silver_schema.TIME_COLUMN])
+        sort_keys = [*config.bronze_primary_key_columns, silver_schema.TIME_COLUMN]
+        silver_df = silver_df.sort(by=sort_keys)
 
         rel = db_con.read_parquet(dest_path)
 
@@ -524,7 +539,7 @@ class TestSilver(TestData):
         ]
         assert rel.columns == expected_columns, "Incorrect columns"
 
-        expected_types = ["bigint", "date", "integer", "struct"]
+        expected_types = [expected_primary_key_type, "date", "integer", "struct"]
         col_types = [t.id for t in rel.types]
         assert col_types == expected_types, "Wrong column types"
 

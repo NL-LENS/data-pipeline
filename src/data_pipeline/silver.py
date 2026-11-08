@@ -81,7 +81,8 @@ class SilverConfig:
         One-entry dictionary where key is the entity type from the entity
         vocabulary and the values is a string or a list of strings of
         column names in bronze that constitute the key.
-        The bronze columns are assumed to be castable to 64-bit integer.
+        The bronze columns are assumed to be castable to 64-bit integer, or
+        to ENUM for short categorical columns such as RINPERSOONS.
     filter_col:
         Dictionary mapping bronze columns that should be filtered on having
         the corresponding value.
@@ -112,11 +113,13 @@ class SilverConfig:
         the format '%m-%d'. The currently only supported case
         is to define the month and day, and an event column is created from the
         year field in the metadata of the bronze field.
+    drop_cols:
+        Any additional columns to be dropped.
 
     Notes
     -----
     Columns are dropped in silver as follows:
-        - id_cols that are not rinpersoon_col.
+        - drop_cols
         - time_cols that are not event_time_col.
         - the filter_col column.
 
@@ -129,6 +132,12 @@ class SilverConfig:
         in silver.
 
     These constraints are currently not enforced by the config.
+
+    The configuration is responsible for creating unique primary keys.
+    For instance, this can be achieved by filtering on `RINPERSOONS`, dropping the column,
+    and specifying only `RINPERSOON` as the primary key.
+    Alternatively, the primary key can be defined as `["RINPERSOON", "RINPERSOONS"]`,
+    in which case `RINPERSOONS` does not have to be dropped.
 
     See Also
     --------
@@ -456,14 +465,29 @@ def run_filter(rel: DuckDBPyRelation, config: SilverConfig) -> DuckDBPyRelation:
     return rel.filter(query)
 
 
-def cast_identifier_columns(rel: DuckDBPyRelation, config: SilverConfig) -> DuckDBPyRelation:
-    """Cast all identifiers required for silver to BIGINT."""
+def cast_identifier_columns(
+    rel: DuckDBPyRelation, config: SilverConfig, design_lookup: dict, sav_meta_table: SavMetaTable
+) -> DuckDBPyRelation:
+    """Cast all identifiers required for silver to BIGINT or ENUM."""
     columns_to_cast = config.bronze_primary_key_columns
     if config.secondary_keys.bronze_columns is not None:
         columns_to_cast += config.secondary_keys.bronze_columns
 
-    cast_query = [f"CAST({column} AS BIGINT) AS {column}" for column in columns_to_cast]
-    full_query = f"* EXCLUDE({','.join(columns_to_cast)}), {','.join(cast_query)}"
+    key_cols_meta = [
+        SavColumnMeta.from_table(lookup=design_lookup | {"variable": col}, table=sav_meta_table)
+        for col in columns_to_cast
+    ]
+    cols_to_type = AttributeClassifier(rel, key_cols_meta).run()
+
+    cast_query = []
+    for column, type_ in cols_to_type.items():
+        if type_ == NoteAttributeType.CONTINUOUS:
+            cast_query += [f"CAST({column} AS BIGINT) AS {column}"]
+        elif type_ == NoteAttributeType.CATEGORICAL:
+            value_labels = rel.select(column).distinct().order(column).fetchall()
+            value_labels_str: list[str] = [f"'{x[0]}'" for x in value_labels]
+            cast_query += [f"CAST({column} as ENUM({','.join(value_labels_str)})) AS {column}"]  # type: ignore[arg-type]
+    full_query = f"* EXCLUDE({','.join(cols_to_type.keys())}), {','.join(cast_query)}"
     return rel.select(full_query)
 
 
@@ -481,7 +505,7 @@ def convert_to_silver(
        * - Column
          - DuckDB type
          - Description
-       * - ``RINPERSOON``
+       * - ``PERSON_ID``
          - ``BIGINT``
          - Person identifier.
        * - ``DATE``
@@ -503,8 +527,8 @@ def convert_to_silver(
     The function processes data, using the column configuration from :py:data:`~src.data_pipeline.silver.SilverConfig`:
         1. Drops rows based on filter_col in the configuration
         2. Drops columns per the configuration
-        3. All columns that are not dropped, not person/time identifier, become
-        NOTE attributes. The type of the attribute -- continuous or categorical --
+        3. All columns that are not dropped, used for timestamps, or primary/secondar
+        keys, become NOTE attributes. The type of the attribute -- continuous or categorical --
         is inferred from the column's distribution and cardinality, compared to
         the one declared in the metadata.
         See :py:data:`~src.data_pipeline.silver.AttributeClassifier`.
@@ -530,13 +554,14 @@ def convert_to_silver(
 
     Returns
     -------
-    SilverMetaRecord
+    SilverMetaRecord:
         Metadata record for the created silver file.
 
     Notes
     -----
     The function assumes that:
-        - the column declared as person ID can be cast to integer without error
+        - the columns declared as primary keys can be cast to
+        BIGINT or ENUM without error.
         - the file metadata have a non-NULL `ref_period` if the config defines
         a new event time column.
     """
@@ -549,7 +574,7 @@ def convert_to_silver(
     rel = con.read_parquet(file_record.bronze_path)  # type: ignore[arg-type]
     rel = run_filter(rel, config)
     rel = define_event_time_column(rel, config, file_record)
-    rel = cast_identifier_columns(rel, config)
+    rel = cast_identifier_columns(rel, config, design_lookup, sav_meta_table)
 
     rel = rel.select(f"* EXCLUDE ({','.join(config.cols_to_drop)})")
     columns = rel.columns

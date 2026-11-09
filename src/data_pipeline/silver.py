@@ -580,7 +580,9 @@ def convert_to_silver(
     rel = define_event_time_column(rel, config, file_record)
     rel = cast_identifier_columns(rel, config, design_lookup, sav_meta_table)
 
-    rel = rel.select(f"* EXCLUDE ({','.join(config.cols_to_drop)})")
+    if len(config.cols_to_drop) > 0:
+        rel = rel.select(f"* EXCLUDE ({','.join(config.cols_to_drop)})")
+
     columns = rel.columns
     attribute_columns = filterfalse(
         lambda col: (

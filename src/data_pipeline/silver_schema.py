@@ -68,6 +68,9 @@ class NoteColumn:
 
     def event_table_query(self) -> str:
         """Create query for making event table."""
+        if len(self.columns) == 0:
+            return f"NULL AS {self.silver_column}"
+
         query_inputs = [f"{col} := {col}" for col in self.columns]
         return f"struct_pack({', '.join(query_inputs)}) AS {self.silver_column}"
 

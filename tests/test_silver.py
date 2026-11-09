@@ -582,25 +582,43 @@ class TestMakeEventTable(TestData):
     """Class for testing making the event table."""
 
     @pytest.mark.parametrize(
-        ("secondary_key_config", "expected_col_type"),
+        ("secondary_key_config", "expected_col_type_secondary_key"),
         [
             ({"school": "SCHOOLID", "dwelling": "RINOBJECTNR"}, "struct"),
             (None, "integer"),
         ],
         ids=["2_relations", "no_relations"],
     )
+    @pytest.mark.parametrize(
+        ("has_event_attrs", "expected_col_type_note"),
+        [(True, "struct"), (False, "integer")],
+        ids=["with_note_attrs", "no_note_attrs"],
+    )
     def test_make_event_table(
-        self, db_con: DuckDBPyConnection, secondary_key_config: dict[str, list[str] | str], expected_col_type: str
+        self,
+        db_con: DuckDBPyConnection,
+        secondary_key_config: dict[str, list[str] | str],
+        expected_col_type_secondary_key: str,
+        has_event_attrs: bool,
+        expected_col_type_note: str,
     ):
         """Test make_event_table function."""
         data_dict = {
             "PERSON": self.make_identifiers().astype(np.int64),
             "SCHOOLID": self.make_identifiers(500).astype(np.int64),
             "RINOBJECTNR": self.make_identifiers(300_000).astype(np.int64),
-            "ATTR1": self.make_continuous(),
-            "ATTR2": self.make_categorical(["a", "b", "c", "missing"], [0.1, 0.6, 0.2, 0.1]),
             "TIME1": self.random_dates(),
         }
+        attribute_cols = []
+
+        if has_event_attrs:
+            attribute_dict = {
+                "ATTR1": self.make_continuous(),
+                "ATTR2": self.make_categorical(["a", "b", "c", "missing"], [0.1, 0.6, 0.2, 0.1]),
+            }
+            data_dict |= attribute_dict
+            attribute_cols = list(attribute_dict.keys())
+
         config = SilverConfig(
             primary_key={"person": "PERSON"},
             filter_col=None,
@@ -610,8 +628,6 @@ class TestMakeEventTable(TestData):
         )
 
         rel = db_con.from_arrow(pl.DataFrame(data_dict).to_arrow())
-        attribute_cols = ["ATTR1", "ATTR2"]
-
         result = make_event_table(rel, config, attribute_cols)
         expected_columns = [
             silver_schema.ENTITY_COLUMNS["person"],
@@ -620,7 +636,7 @@ class TestMakeEventTable(TestData):
             silver_schema.NOTE_COLUMN,
         ]
         assert result.columns == expected_columns, "Incorrect columns"
-        expected_types = ["bigint", "date", expected_col_type, "struct"]
+        expected_types = ["bigint", "date", expected_col_type_secondary_key, expected_col_type_note]
         col_types = [t.id for t in result.types]
         assert col_types == expected_types, "Wrong column types"
 
@@ -629,7 +645,11 @@ class TestMakeEventTable(TestData):
         )
         pl.testing.assert_frame_equal(ordered_result.pl(), result.pl())
 
-        if expected_col_type == "struct":
+        if expected_col_type_note == "struct":
+            fields, types = get_struct_fields_and_types(result, silver_schema.NOTE_COLUMN)
+            assert set(fields) == set(attribute_cols), "Wrong attribute columns"
+
+        if expected_col_type_secondary_key == "struct":
             fields, types = get_struct_fields_and_types(result, silver_schema.RELATION_COLUMN)
 
             assert fields == [silver_schema.ENTITY_COLUMNS["school"], silver_schema.ENTITY_COLUMNS["dwelling"]], (

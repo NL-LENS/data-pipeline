@@ -99,7 +99,8 @@ class SilverConfig:
         Dictionary where keys are entity types from the entity vocabulary.
         Values are a string or a list of strings of constituting
         columns from bronze.
-        The bronze columns are assumed to be castable to 64-bit integer.
+        The bronze columns are assumed to be castable to 64-bit integer, or
+        to ENUM for short categorical columns such as RINPERSOONS.
         The order of the dictionary entries as well as the
         bronze column in the values determines the order
         in the resulting `RELATIONS` column.
@@ -498,7 +499,6 @@ def cast_identifier_columns(
 def convert_to_silver(
     source_manifest: SourceManifest, source_path: Path, source_filename: Path, dest_path: Path, config: SilverConfig
 ) -> SilverMetaRecord:
-    # TODO: update table schema in docstring
     """Convert bronze data to silver.
 
     The resulting parquet file has the following schema:
@@ -509,19 +509,23 @@ def convert_to_silver(
        * - Column
          - DuckDB type
          - Description
-       * - ``PERSON_ID``
+       * - ``ENTITY_ID``
          - ``BIGINT``
-         - Person identifier.
+         - Unique entity identifier. Can be persons, companies or other. Needs to be one
+         of the entities in :py:data:`~src.data_pipeine.silver_schema.ENTITY_COLUMNS`.
        * - ``DATE``
          - ``DATE``
          - Event date.
+       * - ``RELATIONS``
+         - ``STRUCT``
+         - Key relating to other entities.
        * - ``NOTE``
          - ``STRUCT``
          - Event attributes; field names and types are inherited from the
            bronze columns (continuous fields are ``FLOAT``).
 
     For example, a row may look like
-    ``{RINPERSOON: 12345, DATE: 2025-06-04, NOTE: {attr1: 10, attr2: "Amsterdam"}}``.
+    ``{PERSON_ID: 12345, DATE: 2025-06-04, RELATIONS: {DWELLING_ID: 3}, NOTE: {attr1: 10, attr2: "Amsterdam"}}``.
 
     The mapping of columns in bronze to columns in silver is defined
     in the SilverConfig.

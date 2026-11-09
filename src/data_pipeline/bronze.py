@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,41 @@ from data_pipeline.utils import quote_identifier
 DEFAULT_CHUNKSIZE = 100_000
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class BronzeConfig:
+    """Config for bronze processing.
+
+    Arguments
+    ---------
+    source_filename_regex:
+        String to fuzzy-search the file names for.
+    source_path_regex:
+        String to fuzzy-search the file paths for.
+    start_year:
+        First year for the reference period.
+    end_year:
+        Last year of the reference period.
+    chunk_size:
+        Chunk size for processing the .sav files.
+
+    Notes
+    -----
+    For the reference period, `start_year` and `end_year` are both included.
+    `source_filename_regex` and `source_path_regex` are applied together; to
+    omit one, use `""`.
+    Within the datasets matched by `source_filename_regex` and `source_path_regex`,
+    only the highest version within source_path and `ref_period` is used.
+    Files without read permission are ignored.
+
+    """
+
+    source_filename_regex: str
+    source_path_regex: str
+    start_year: int
+    end_year: int
+    chunk_size: int | None = None
 
 
 def read_sav_meta(file: Path | str) -> pyreadstat.metadata_container:
@@ -174,14 +210,10 @@ def ingest_source(
     logger.info("Done.")
 
 
-# ruff: disable[PLR0913, PLR0917]
 def build(
     db_file: Path,
-    source_regex: str,
-    start_year: int,
-    end_year: int,
+    config: BronzeConfig,
     dest_dir: Path,
-    chunk_size: int | None,
 ) -> None:
     """Build a set of bronze datasets.
 
@@ -189,27 +221,16 @@ def build(
     ---------
     db_file:
         Path to the database with metadata.
-    source_regex:
-        String to fuzzy-search the paths and file names for.
-    start_year:
-        First year for the reference period.
-    end_year:
-        Last year of the reference period.
+    config:
+        The BronzeConfig for this design.
     dest_dir:
         Destination directory to save the processed files to. The resulting
         filename is replicated from the filename of the source, with `.sav`
         replaced by `.parquet`. If it does not exist, it is created, including
         all parents.
-    chunk_size:
-        Number of rows to process per chunk.
 
     Notes
     -----
-    For the reference period, start_year and end_year are both included.
-    Within the datasets matched by source_regex,
-    only the highest version within source_path and ref_period is used.
-    Files without read permission are ignored.
-
     This function is currently experimental. For instance, datasets
     with missing reference period are ignored.
     """
@@ -219,15 +240,17 @@ def build(
         # TODO: not sure yet what's the best way to query multiple
         # records in the tables. Plain sql for now.
         con.sql("SET TIMEZONE='UTC'")
-        regex_param = f"%{source_regex}%"
-        start_year_param = f"{start_year}-01-01"
-        end_year_param = f"{end_year}-12-31"
+        filename_regex_param = f"%{config.source_filename_regex}%"
+        path_regex_param = f"%{config.source_path_regex}%"
+        start_year_param = f"{config.start_year}-01-01"
+        end_year_param = f"{config.end_year}-12-31"
         # ruff: disable[S608]
         sql = f"""
            SELECT source_path, source_filename
            FROM {quote_identifier(source_manifest.table_name)}
            WHERE
               source_filename like ?
+              AND source_path like ?
               AND ref_period BETWEEN ? AND ?
               AND read_access
            QUALIFY
@@ -240,7 +263,7 @@ def build(
         # if version is NULL; however, it's not clear this can happen
         # within the primary key constraint of the table that guarantees that
         # file name are unique.
-        params = (regex_param, start_year_param, end_year_param)
+        params = (filename_regex_param, path_regex_param, start_year_param, end_year_param)
         datasets_to_process = con.execute(sql, params).fetchall()
 
     if len(datasets_to_process) == 0:
@@ -249,7 +272,4 @@ def build(
     dest_dir.mkdir(exist_ok=True, parents=True)
     for source_path, source_filename in datasets_to_process:
         dest_filename = dest_dir / Path(source_filename).with_suffix(".parquet").name
-        ingest_source(source_manifest, Path(source_path), Path(source_filename), dest_filename, chunk_size)
-
-
-# ruff: enable[PLR0913, PLR0917]
+        ingest_source(source_manifest, Path(source_path), Path(source_filename), dest_filename, config.chunk_size)

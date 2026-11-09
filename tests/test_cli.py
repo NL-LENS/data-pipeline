@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 import pytest
 import data_pipeline.cli
+from data_pipeline.bronze import BronzeConfig
 
 
 @pytest.mark.parametrize(
@@ -49,7 +50,7 @@ def test_cli_build(monkeypatch: pytest.MonkeyPatch):
             "--ref_period",
             "2020",
             "2021",
-            "--source_regex",
+            "--source_filename_regex",
             "SPOLIS",
             "--dest_dir",
             "path/to/processed/data",
@@ -59,6 +60,11 @@ def test_cli_build(monkeypatch: pytest.MonkeyPatch):
     )
     with patch("data_pipeline.cli.build_bronze") as build_bronze_patch:
         data_pipeline.cli.cli_main()
+        config = BronzeConfig(
+            start_year=2020, end_year=2021, source_filename_regex="SPOLIS", source_path_regex="", chunk_size=500_000
+        )
         build_bronze_patch.assert_called_once_with(
-            Path("/path/to/db.db"), "SPOLIS", 2020, 2021, Path("path/to/processed/data"), 500_000
+            Path("/path/to/db.db"),
+            config,
+            Path("path/to/processed/data"),
         )

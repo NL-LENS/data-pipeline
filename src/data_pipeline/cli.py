@@ -4,6 +4,7 @@ import argparse
 import importlib.metadata
 import logging
 from pathlib import Path
+from data_pipeline.bronze import BronzeConfig
 from data_pipeline.bronze import build as build_bronze
 from data_pipeline.metadata import run_init
 
@@ -26,7 +27,12 @@ def cli_main() -> None:
     build_parser = subparsers.add_parser("build")
     build_parser.add_argument("color", choices=["bronze"], type=str, help="Which color layer to build")
     build_parser.add_argument("--db_file", type=Path, help="Path to the database file with metadata.")
-    build_parser.add_argument("--source_regex", type=str, help="Filters source_path on matching strings")
+    build_parser.add_argument(
+        "--source_filename_regex", type=str, help="Filters source_filename on matching strings", default=""
+    )
+    build_parser.add_argument(
+        "--source_path_regex", type=str, help="Filters source_path on matching strings", default=""
+    )
     build_parser.add_argument(
         "--ref_period", nargs=2, help="Start and end year (both included) of reference to process."
     )
@@ -51,6 +57,13 @@ def cli_main() -> None:
             if args.color == "bronze":
                 start_year = int(min(args.ref_period))
                 end_year = int(max(args.ref_period))
-                build_bronze(args.db_file, args.source_regex, start_year, end_year, args.dest_dir, args.chunk_size)
+                config = BronzeConfig(
+                    source_filename_regex=args.source_filename_regex,
+                    source_path_regex=args.source_path_regex,
+                    start_year=start_year,
+                    end_year=end_year,
+                    chunk_size=args.chunk_size,
+                )
+                build_bronze(args.db_file, config, args.dest_dir)
             else:
                 raise NotImplementedError

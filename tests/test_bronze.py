@@ -11,6 +11,7 @@ import pyreadstat
 import pytest
 from polars.testing import assert_frame_equal
 from data_pipeline.bronze import DEFAULT_CHUNKSIZE
+from data_pipeline.bronze import BronzeConfig
 from data_pipeline.bronze import build
 from data_pipeline.bronze import ingest_source
 from data_pipeline.bronze import stream_to_bronze
@@ -266,7 +267,8 @@ class TestBuild(TestData):
     def test_build(self, mock_ingest_source: mock.Mock, db_file: Path, tmp_path: Path):
         """Test bronze build."""
         dest_dir = tmp_path / "processed"
-        build(db_file, "SPOLIS", 2020, 2021, dest_dir, None)
+        config = BronzeConfig(source_filename_regex="SPOLIS", source_path_regex="", start_year=2020, end_year=2021)
+        build(db_file, config, dest_dir)
 
         expected_calls = 2
         assert mock_ingest_source.call_count == expected_calls, "Ingest source not called as expected."

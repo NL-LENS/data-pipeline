@@ -113,8 +113,7 @@ class SilverConfig:
         the format '%m-%d'. The currently only supported case
         is to define the month and day, and an event column is created from the
         year field in the metadata of the bronze field.
-    drop_cols:
-        Any additional columns to be dropped.
+
 
     Notes
     -----
@@ -174,6 +173,11 @@ class SilverConfig:
     def bronze_primary_key_columns(self) -> list[str]:
         """Name of the columns in the bronze file used for the primary key in silver."""
         return list(self.primary_key.entity.bronze_columns)
+
+    @property
+    def bronze_secondary_key_columns(self) -> list[str]:
+        """Name of columns in the bronze file used for the secondary key in silver."""
+        return self.secondary_keys.bronze_columns or []
 
     @property
     def silver_primary_key_column(self) -> str:
@@ -470,8 +474,8 @@ def cast_identifier_columns(
 ) -> DuckDBPyRelation:
     """Cast all identifiers required for silver to BIGINT or ENUM."""
     columns_to_cast = config.bronze_primary_key_columns
-    if config.secondary_keys.bronze_columns is not None:
-        columns_to_cast += config.secondary_keys.bronze_columns
+    if config.bronze_secondary_key_columns is not None:
+        columns_to_cast += config.bronze_secondary_key_columns
 
     key_cols_meta = [
         SavColumnMeta.from_table(lookup=design_lookup | {"variable": col}, table=sav_meta_table)
@@ -579,7 +583,12 @@ def convert_to_silver(
     rel = rel.select(f"* EXCLUDE ({','.join(config.cols_to_drop)})")
     columns = rel.columns
     attribute_columns = filterfalse(
-        lambda col: col in config.event_idx_columns or col in config.bronze_primary_key_columns, columns
+        lambda col: (
+            col in config.event_idx_columns
+            or col in config.bronze_primary_key_columns
+            or col in config.bronze_secondary_key_columns
+        ),
+        columns,
     )
     attribute_columns_meta = [
         SavColumnMeta.from_table(lookup=design_lookup | {"variable": col}, table=sav_meta_table)

@@ -25,7 +25,7 @@ ENTITY_COLUMNS: MappingProxyType[str, str] = MappingProxyType(
 SILVER_COL_NAMES = [TIME_COLUMN, NOTE_COLUMN, RELATION_COLUMN, list(ENTITY_COLUMNS.values())]
 
 
-@dataclass(frozen=True)  # TODO: what for?
+@dataclass
 class EntityKey:
     """Mapping of silver entity column to constituting bronze columns.
 

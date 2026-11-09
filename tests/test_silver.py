@@ -229,6 +229,16 @@ config_with_composite_primary_key = SilverConfig(
     secondary_keys=None,
     event_time_col="TIME1",
 )
+# the following writes IRRELEVANT_ID and TIME2 to NOTE; just for testing
+# TODO: this test should be refactored eventually
+config_without_dropping_cols = SilverConfig(
+    primary_key={"person": ["RINPERSOON", "RINPERSOONS"]},
+    filter_col=None,
+    time_cols=["TIME1"],
+    drop_cols=None,
+    secondary_keys=None,
+    event_time_col="TIME1",
+)
 
 
 @pytest.mark.parametrize(
@@ -237,8 +247,9 @@ config_with_composite_primary_key = SilverConfig(
         (config_with_existing_time_col, "bigint"),
         (config_without_existing_time_col, "bigint"),
         (config_with_composite_primary_key, "struct"),
+        (config_without_dropping_cols, "struct"),
     ],
-    ids=["use_existing_time_col", "make_new_time_col", "primary_key_with_enum"],
+    ids=["use_existing_time_col", "make_new_time_col", "primary_key_with_enum", "no_columns_to_drop"],
 )
 class TestSilver(TestData):
     """Class for testing bronze->silver conversion."""
@@ -560,6 +571,9 @@ class TestSilver(TestData):
             "CAT_ATTR1",
             "CAT_ATTR2",
         }
+        if len(config.cols_to_drop) == 0:
+            expected_fields.update(["IRRELEVANT_ID", "TIME2"])
+
         assert expected_fields == set(fields), "Note has incorrect fields."
 
         continuous_cols_missing_frac = {

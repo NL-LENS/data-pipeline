@@ -17,14 +17,14 @@ python -m pip install 'data-pipeline @ git+https://github.com/NL-LENS/data-pipel
 lens init --db_file lens.duckdb --root G:/
 lens build bronze \
   --db_file lens.duckdb \
-  --source_regex INPA \
+  --source_filename_regex INPA \
   --ref_period 2015 2020 \
   --dest_dir data_processed/bronze/inpa
 
 
 lens build bronze \
   --db_file lens.duckdb \
-  --source_regex SPOLIS \
+  --source_filename_regex SPOLIS \
   --ref_period 2015 2020 \
   --dest_dir data_processed/bronze/spolis
 

@@ -32,7 +32,7 @@ class EntityKey:
     Parameters
     ----------
     type_
-        Silver entity type as defined in :py:data:`~data_pipeline.silver_schema.py`.
+        Silver entity type as defined in :py:data:`~data_pipeline.silver_schema.ENTITY_COLUMNS`.
     columns
         List of strings of bronze columns constituting the entity.
     """

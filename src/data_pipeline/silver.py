@@ -142,7 +142,7 @@ class SilverConfig:
     See Also
     --------
     :py:data:`~data_pipeline.silver_schema.ENTITY_COLUMNS`
-    :py:data:`~data_pipeline.silver.convert_to_silver`.
+    :py:func:`~data_pipeline.silver.convert_to_silver`.
 
     """
 
@@ -532,14 +532,14 @@ def convert_to_silver(
     No column for the event type is created; this should be specified
     in the location where the file is stored, using hive partitioning.
 
-    The function processes data, using the column configuration from :py:data:`~data_pipeline.silver.SilverConfig`:
+    The function processes data, using the column configuration from :py:class:`~data_pipeline.silver.SilverConfig`:
         1. Drops rows based on filter_col in the configuration
         2. Drops columns per the configuration
         3. All columns that are not dropped, used for timestamps, or primary/secondar
         keys, become NOTE attributes. The type of the attribute -- continuous or categorical --
         is inferred from the column's distribution and cardinality, compared to
         the one declared in the metadata.
-        See :py:data:`~data_pipeline.silver.AttributeClassifier`.
+        See :py:class:`~data_pipeline.silver.AttributeClassifier`.
         4. In continuous NOTE attributes, declared missing values are converted to NULL.
 
     The output table is ordered by:

@@ -105,7 +105,7 @@ class SilverConfig:
         bronze column in the values determines the order
         in the resulting `RELATIONS` column.
     event_time_col
-        Column name in bronze identifying the TIME.
+        Column name in bronze identifying the time of the event.
     event_time_col_fmt
         Format of event_time_col in the bronze data (after converting to string).
         Follows the duckdb spec: https://duckdb.org/docs/lts/sql/functions/dateformat#format-specifiers
@@ -126,8 +126,8 @@ class SilverConfig:
     The config supports two uses of event time data:
         - using an existing column as the event time column. Requires specifying
         `event_time_col` and `event_time_col_fmt`.
-        - applying a new column. Requires specifying `apply_event_time` an
-        setting `event_time_col=None` and `time_cols=[]`. The latter assumes that
+        - applying a new column. Requires specifying `apply_event_time` and
+        setting `event_time_col=None` and `time_cols=None`. The latter assumes that
         the bronze file does not have any time column that needs to be dropped
         in silver.
 
@@ -150,23 +150,23 @@ class SilverConfig:
     def __init__(  # noqa: PLR0913, PLR0917
         self,
         primary_key: dict[str, list[str] | str],
-        secondary_keys: dict[str, list[str] | str] | None,
-        filter_col: dict[str, str] | None,
-        time_cols: list[str],
-        event_time_col: str | None,
+        secondary_keys: dict[str, list[str] | str] | None = None,
+        filter_col: dict[str, str] | None = None,
+        time_cols: list[str] | None = None,
+        event_time_col: str | None = None,
         event_time_col_fmt: str | None = "%Y-%m-%d",
         apply_event_time: str | None = None,
         drop_cols: list[str] | None = None,
     ):
 
-        self.time_cols = time_cols
+        self.time_cols = time_cols or []
         self.event_time_col = event_time_col
         self.event_time_col_fmt = event_time_col_fmt
         self.apply_event_time = apply_event_time
-        self.drop_cols = drop_cols
+        self.drop_cols = drop_cols or []
         # TODO for config validation: dictionaries can only have 1 entry!
         # TODO for config validation: in the dict, also the values need to be unique!
-        self.filter_col = None if filter_col is None else Filter.from_dict(filter_col)
+        self.filter_col = Filter.from_dict(filter_col) if filter_col else None
         self.primary_key = PrimaryKeyColumn.from_dict(primary_key)
         self.secondary_keys = SecondaryKeyColumn.from_dict(secondary_keys)
 
@@ -188,7 +188,7 @@ class SilverConfig:
     @property
     def cols_to_drop(self) -> list[str]:
         """Columns to drop from the table."""
-        drop_cols = list(self.drop_cols or [])
+        drop_cols = self.drop_cols.copy()
         drop_cols += filterfalse(lambda x: x == self.event_time_col, self.time_cols)
 
         if self.filter_col:

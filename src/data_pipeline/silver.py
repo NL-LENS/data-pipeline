@@ -54,11 +54,11 @@ class NoteAttributeType(StrEnum):
 class Filter:
     """Mapping of silver entity column to constituting bronze columns.
 
-    Arguments
-    ---------
-    column:
+    Parameters
+    ----------
+    column
         Column to filter.
-    value:
+    value
         Filter to apply.
     """
 
@@ -75,27 +75,27 @@ class Filter:
 class SilverConfig:
     """Config for silver processing.
 
-    Arguments
-    ---------
-    primary_key:
+    Parameters
+    ----------
+    primary_key
         One-entry dictionary where key is the entity type from the entity
         vocabulary and the values is a string or a list of strings of
         column names in bronze that constitute the key.
         The bronze columns are assumed to be castable to 64-bit integer, or
         to ENUM for short categorical columns such as RINPERSOONS.
-    filter_col:
+    filter_col
         Dictionary mapping bronze columns that should be filtered on having
         the corresponding value.
         A common use case is filtering on people in GBA, ie `RINPERSOONS="R"`.
         Currently only supports filtering on one column of string type, and
         filtering on one value.
         The filter column is dropped after filtering.
-    time_cols:
+    time_cols
         List of column names in bronze that are timestamps.
-    drop_cols:
+    drop_cols
         List of column names in bronze to be dropped. A common use case
         are identifier columns that are not used in silver.
-    secondary_keys:
+    secondary_keys
         Dictionary where keys are entity types from the entity vocabulary.
         Values are a string or a list of strings of constituting
         columns from bronze.
@@ -104,12 +104,12 @@ class SilverConfig:
         The order of the dictionary entries as well as the
         bronze column in the values determines the order
         in the resulting `RELATIONS` column.
-    event_time_col:
+    event_time_col
         Column name in bronze identifying the TIME.
-    event_time_col_fmt:
+    event_time_col_fmt
         Format of event_time_col in the bronze data (after converting to string).
         Follows the duckdb spec: https://duckdb.org/docs/lts/sql/functions/dateformat#format-specifiers
-    apply_event_time:
+    apply_event_time
         If given, creates a new column referring to event time. Must match
         the format '%m-%d'. The currently only supported case
         is to define the month and day, and an event column is created from the
@@ -141,8 +141,8 @@ class SilverConfig:
 
     See Also
     --------
-    :py:data:`~src.data_pipeline.silver_schema.ENTITY_COLUMNS`
-    :py:data:`~src.data_pipeline.silver.convert_to_silver`.
+    :py:data:`~data_pipeline.silver_schema.ENTITY_COLUMNS`
+    :py:data:`~data_pipeline.silver.convert_to_silver`.
 
     """
 
@@ -211,11 +211,11 @@ class SilverConfig:
 class AttributeClassifier:
     """Classifier for event attributes.
 
-    Arguments
-    ---------
-    rel:
+    Parameters
+    ----------
+    rel
         Relation with the data to operate on.
-    attr_cols:
+    attr_cols
         List of column names in `rel` that are event attributes.
 
     Notes
@@ -226,9 +226,9 @@ class AttributeClassifier:
     In practice, attributes are sequentially classified as:
         - continuous if their metadata has no value label
         - continuous if the approximate count of unique
-        values is more than :py:data:`~src.data_pipeline.silver.N_SIGMA`
+        values is more than :py:data:`~data_pipeline.silver.N_SIGMA`
         standard deviations of the reference cardinality. The standard deviation
-        is assumed to be :py:data:`~src.data_pipeline.silver.APPROX_SD` of the
+        is assumed to be :py:data:`~data_pipeline.silver.APPROX_SD` of the
         reference cardinality in the metadata, which is conservative.
         - continuous if the column is of numeric type and has all NaNs.
         - categorical if the exact count of unique values is less or equal the
@@ -375,13 +375,13 @@ def define_event_time_column(
 def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols: list[str]) -> DuckDBPyRelation:
     """Transform a relation into the event-table format.
 
-    Arguments
-    ---------
-    rel:
+    Parameters
+    ----------
+    rel
         Relation with the table to process.
-    config:
+    config
         The configuration class.
-    attribute_cols:
+    attribute_cols
         Column names of event attributes.
     """
     note_column = NoteColumn(attribute_cols)
@@ -405,18 +405,18 @@ def cleanse_continuous(rel: DuckDBPyRelation, attr_col_meta: list[SavColumnMeta]
     Assumes that the column values as well as the declared value labels
     in the metadata are castable to float.
 
-    Arguments
-    ---------
-    rel:
+    Parameters
+    ----------
+    rel
         Relation with the data to operate on.
-    attr_col_meta:
+    attr_col_meta
         Metadata of columns to process.
 
     Raises
     ------
-    ValueError:
+    ValueError
         If value labels of column metadata are not castable to float.
-    duckdb.BinderException:
+    duckdb.BinderException
         If the column is non-numeric but the column value label keys are float.
     """
     for col_meta in attr_col_meta:
@@ -512,7 +512,7 @@ def convert_to_silver(
        * - ``ENTITY_ID``
          - ``BIGINT``
          - Unique entity identifier. Can be persons, companies or other. Needs to be one
-         of the entities in :py:data:`~src.data_pipeine.silver_schema.ENTITY_COLUMNS`.
+         of the entities in :py:data:`~data_pipeline.silver_schema.ENTITY_COLUMNS`.
        * - ``DATE``
          - ``DATE``
          - Event date.
@@ -532,14 +532,14 @@ def convert_to_silver(
     No column for the event type is created; this should be specified
     in the location where the file is stored, using hive partitioning.
 
-    The function processes data, using the column configuration from :py:data:`~src.data_pipeline.silver.SilverConfig`:
+    The function processes data, using the column configuration from :py:data:`~data_pipeline.silver.SilverConfig`:
         1. Drops rows based on filter_col in the configuration
         2. Drops columns per the configuration
         3. All columns that are not dropped, used for timestamps, or primary/secondar
         keys, become NOTE attributes. The type of the attribute -- continuous or categorical --
         is inferred from the column's distribution and cardinality, compared to
         the one declared in the metadata.
-        See :py:data:`~src.data_pipeline.silver.AttributeClassifier`.
+        See :py:data:`~data_pipeline.silver.AttributeClassifier`.
         4. In continuous NOTE attributes, declared missing values are converted to NULL.
 
     The output table is ordered by:
@@ -547,22 +547,22 @@ def convert_to_silver(
         - time column
         - keys of the secondary keys dictionary declared in the config
 
-    Arguments
-    ---------
-    source_manifest:
+    Parameters
+    ----------
+    source_manifest
         Manifest with the source metadata.
-    source_path:
+    source_path
         Path to the original .sav file.
-    source_filename:
+    source_filename
         Name of the original .sav file.
-    dest_path:
+    dest_path
         Path where to save the silver file.
-    config:
+    config
         The silver processing configuration.
 
     Returns
     -------
-    SilverMetaRecord:
+    SilverMetaRecord
         Metadata record for the created silver file.
 
     Notes

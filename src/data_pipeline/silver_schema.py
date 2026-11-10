@@ -29,11 +29,11 @@ SILVER_COL_NAMES = [TIME_COLUMN, NOTE_COLUMN, RELATION_COLUMN, list(ENTITY_COLUM
 class EntityKey:
     """Mapping of silver entity column to constituting bronze columns.
 
-    Arguments
-    ---------
-    type_:
-        Silver entity type as defined in :py:data:`~src.data_pipeline.silver_schema.py`.
-    columns:
+    Parameters
+    ----------
+    type_
+        Silver entity type as defined in :py:data:`~data_pipeline.silver_schema.py`.
+    columns
         List of strings of bronze columns constituting the entity.
     """
 
@@ -53,9 +53,9 @@ class EntityKey:
 class NoteColumn:
     """Container for creating columns in silver.
 
-    Arguments
-    ---------
-    columns:
+    Parameters
+    ----------
+    columns
         List of strings of bronze columns constituting the entity.
     """
 
@@ -79,9 +79,9 @@ class NoteColumn:
 class PrimaryKeyColumn:
     """Container for silver primary key.
 
-    Arguments
-    ---------
-    entity:
+    Parameters
+    ----------
+    entity
         EntityKey of the column.
     """
 
@@ -118,9 +118,10 @@ class PrimaryKeyColumn:
 class SecondaryKeyColumn:
     """Container for silver relations column.
 
-    Arguments
-    ---------
-    entities: list of entities or None
+    Parameters
+    ----------
+    entities
+        list of entities or None
     """
 
     entities: list[EntityKey] | None

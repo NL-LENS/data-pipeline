@@ -219,3 +219,5 @@ __marimo__/
 
 # Vim - for working on RA
 *.swp
+
+docs/**/*.parquet

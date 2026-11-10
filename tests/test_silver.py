@@ -208,35 +208,25 @@ config_with_existing_time_col = SilverConfig(
     filter_col={"RINPERSOONS": "R"},
     time_cols=["TIME1", "TIME2"],
     drop_cols=["IRRELEVANT_ID"],
-    secondary_keys=None,
     event_time_col="TIME1",
 )
 config_without_existing_time_col = SilverConfig(
     primary_key={"person": "RINPERSOON"},
     filter_col={"RINPERSOONS": "R"},
-    time_cols=[],
     drop_cols=["IRRELEVANT_ID"],
-    secondary_keys=None,
-    event_time_col=None,
-    event_time_col_fmt=None,
     apply_event_time="01-01",
 )
 config_with_composite_primary_key = SilverConfig(
     primary_key={"person": ["RINPERSOON", "RINPERSOONS"]},
-    filter_col=None,
     time_cols=["TIME1", "TIME2"],
     drop_cols=["IRRELEVANT_ID"],
-    secondary_keys=None,
     event_time_col="TIME1",
 )
 # the following writes IRRELEVANT_ID and TIME2 to NOTE; just for testing
 # TODO: this test should be refactored eventually
 config_without_dropping_cols = SilverConfig(
     primary_key={"person": ["RINPERSOON", "RINPERSOONS"]},
-    filter_col=None,
     time_cols=["TIME1"],
-    drop_cols=None,
-    secondary_keys=None,
     event_time_col="TIME1",
 )
 
@@ -635,7 +625,6 @@ class TestMakeEventTable(TestData):
 
         config = SilverConfig(
             primary_key={"person": "PERSON"},
-            filter_col=None,
             time_cols=["TIME1"],
             secondary_keys=secondary_key_config,
             event_time_col="TIME1",

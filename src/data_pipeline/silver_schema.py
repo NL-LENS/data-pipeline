@@ -7,6 +7,7 @@ from typing import Self
 
 TIME_COLUMN = "DATE"
 NOTE_COLUMN = "NOTE"
+EVENT_COLUMN = "EVENT"
 RELATION_COLUMN = "RELATIONS"
 
 # mapping of silver entity types to column names

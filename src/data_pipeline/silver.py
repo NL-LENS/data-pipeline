@@ -83,6 +83,8 @@ class SilverConfig:
         column names in bronze that constitute the key.
         The bronze columns are assumed to be castable to 64-bit integer, or
         to ENUM for short categorical columns such as RINPERSOONS.
+    event_name
+        The name of the event.
     filter_col
         Dictionary mapping bronze columns that should be filtered on having
         the corresponding value.
@@ -150,6 +152,7 @@ class SilverConfig:
     def __init__(  # noqa: PLR0913, PLR0917
         self,
         primary_key: dict[str, list[str] | str],
+        event_name: str,
         secondary_keys: dict[str, list[str] | str] | None = None,
         filter_col: dict[str, str] | None = None,
         time_cols: list[str] | None = None,
@@ -159,6 +162,7 @@ class SilverConfig:
         drop_cols: list[str] | None = None,
     ):
 
+        self.event_name = event_name
         self.time_cols = time_cols or []
         self.event_time_col = event_time_col
         self.event_time_col_fmt = event_time_col_fmt
@@ -393,7 +397,8 @@ def make_event_table(rel: DuckDBPyRelation, config: SilverConfig, attribute_cols
     time_colname_query = (
         f"{config.event_time_col} AS {silver_schema.TIME_COLUMN}" if config.has_event_col else silver_schema.TIME_COLUMN
     )
-    rel = rel.select(f"{primary_key_query}, {time_colname_query}, {relations_query}, {note_query}")
+    event_col_query = f"'{config.event_name}' AS {silver_schema.EVENT_COLUMN}"
+    rel = rel.select(f"{primary_key_query}, {event_col_query}, {time_colname_query}, {relations_query}, {note_query}")
     return rel.order(
         f"{config.silver_primary_key_column}, {silver_schema.TIME_COLUMN}, {silver_schema.RELATION_COLUMN}"
     )
@@ -513,6 +518,9 @@ def convert_to_silver(
          - ``BIGINT``
          - Unique entity identifier. Can be persons, companies or other. Needs to be one
          of the entities in :py:data:`~data_pipeline.silver_schema.ENTITY_COLUMNS`.
+       * - ``EVENT``
+         - ``VARCHAR``
+         - Name of the event. Is the same for all rows in the file.
        * - ``DATE``
          - ``DATE``
          - Event date.

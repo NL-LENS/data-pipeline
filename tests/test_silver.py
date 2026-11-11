@@ -205,6 +205,7 @@ class TestClassifyAttributes(TestData):
 
 config_with_existing_time_col = SilverConfig(
     primary_key={"person": "RINPERSOON"},
+    event_name="income",
     filter_col={"RINPERSOONS": "R"},
     time_cols=["TIME1", "TIME2"],
     drop_cols=["IRRELEVANT_ID"],
@@ -212,12 +213,14 @@ config_with_existing_time_col = SilverConfig(
 )
 config_without_existing_time_col = SilverConfig(
     primary_key={"person": "RINPERSOON"},
+    event_name="income",
     filter_col={"RINPERSOONS": "R"},
     drop_cols=["IRRELEVANT_ID"],
     apply_event_time="01-01",
 )
 config_with_composite_primary_key = SilverConfig(
     primary_key={"person": ["RINPERSOON", "RINPERSOONS"]},
+    event_name="income",
     time_cols=["TIME1", "TIME2"],
     drop_cols=["IRRELEVANT_ID"],
     event_time_col="TIME1",
@@ -226,6 +229,7 @@ config_with_composite_primary_key = SilverConfig(
 # TODO: this test should be refactored eventually
 config_without_dropping_cols = SilverConfig(
     primary_key={"person": ["RINPERSOON", "RINPERSOONS"]},
+    event_name="income",
     time_cols=["TIME1"],
     event_time_col="TIME1",
 )
@@ -534,13 +538,14 @@ class TestSilver(TestData):
 
         expected_columns = [
             silver_schema.ENTITY_COLUMNS["person"],
+            silver_schema.EVENT_COLUMN,
             silver_schema.TIME_COLUMN,
             silver_schema.RELATION_COLUMN,
             silver_schema.NOTE_COLUMN,
         ]
         assert rel.columns == expected_columns, "Incorrect columns"
 
-        expected_types = [expected_primary_key_type, "date", "integer", "struct"]
+        expected_types = [expected_primary_key_type, "varchar", "date", "integer", "struct"]
         col_types = [t.id for t in rel.types]
         assert col_types == expected_types, "Wrong column types"
 
@@ -625,6 +630,7 @@ class TestMakeEventTable(TestData):
 
         config = SilverConfig(
             primary_key={"person": "PERSON"},
+            event_name="income",
             time_cols=["TIME1"],
             secondary_keys=secondary_key_config,
             event_time_col="TIME1",
@@ -634,12 +640,13 @@ class TestMakeEventTable(TestData):
         result = make_event_table(rel, config, attribute_cols)
         expected_columns = [
             silver_schema.ENTITY_COLUMNS["person"],
+            silver_schema.EVENT_COLUMN,
             silver_schema.TIME_COLUMN,
             silver_schema.RELATION_COLUMN,
             silver_schema.NOTE_COLUMN,
         ]
         assert result.columns == expected_columns, "Incorrect columns"
-        expected_types = ["bigint", "date", expected_col_type_secondary_key, expected_col_type_note]
+        expected_types = ["bigint", "varchar", "date", expected_col_type_secondary_key, expected_col_type_note]
         col_types = [t.id for t in result.types]
         assert col_types == expected_types, "Wrong column types"
 

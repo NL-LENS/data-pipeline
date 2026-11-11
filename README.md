@@ -57,11 +57,9 @@ def main():
             "INPA",
             SilverConfig(
                 primary_key={"person": "RINPERSOON"},
+                event_name="INCOME",
                 filter_col={"RINPERSOONS": "R"},
-                time_cols=[],
                 drop_cols=["RINPERSOONHKW"],
-                secondary_keys=None,
-                event_time_col=None,
                 apply_event_time="01-01",
             ),
         ),
@@ -69,6 +67,7 @@ def main():
             "SPOLIS",
             SilverConfig(
                 primary_key={"person": "RINPERSOON"},
+                event_name="JOB_START",
                 filter_col={"RINPERSOONS": "R"},
                 time_cols=[
                     "SDATUMAANVANGIKO",
@@ -77,7 +76,6 @@ def main():
                     "SDATUMAANVANGIKV",
                     "SDATUMEINDEIKV",
                 ],
-                secondary_keys=None,
                 event_time_col="SDATUMAANVANGIKO",
                 event_time_col_fmt="%Y%m%d",
             ),
@@ -87,6 +85,7 @@ def main():
             SilverConfig(
                 primary_key={"person": "RINPERSOON"},
                 filter_col={"RINPERSOONS": "R"},
+                event_name="JOB_END",
                 time_cols=[
                     "SDATUMAANVANGIKO",
                     "SDATUMEINDEIKO",
@@ -94,7 +93,6 @@ def main():
                     "SDATUMAANVANGIKV",
                     "SDATUMEINDEIKV",
                 ],
-                secondary_keys=None,
                 event_time_col="SDATUMEINDEIKO",
                 event_time_col_fmt="%Y%m%d",
             ),
@@ -115,7 +113,7 @@ def main():
             datasets_to_process = con.execute(sql, (regex_param,)).fetchall()
             for source_path, source_filename, ref_period in tqdm(datasets_to_process, desc=f"Creating {event}"):
                 year = ref_period.year
-                dest_path = Path(f"data_processed/silver/EVENT={event}") / f"{year}.parquet"
+                dest_path = Path(f"data_processed/silver/{event}") / f"{year}.parquet"
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
                 silver_meta = convert_to_silver(
                     source_manifest=source_manifest,
@@ -137,9 +135,9 @@ if __name__ == "__main__":
 In a `DuckDB` terminal:
 
 ```sql
-CREATE TABLE INPA as SELECT * FROM read_parquet('data_processed/silver/EVENT=INPA/');
-CREATE TABLE JOB_START as SELECT * FROM read_parquet('data_processed/silver/EVENT=JOB_START/');
-CREATE TABLE JOB_END as SELECT * FROM read_parquet('data_processed/silver/EVENT=JOB_END/');
+CREATE TABLE INPA as SELECT * FROM read_parquet('data_processed/silver/INCOME/');
+CREATE TABLE JOB_START as SELECT * FROM read_parquet('data_processed/silver/JOB_START/');
+CREATE TABLE JOB_END as SELECT * FROM read_parquet('data_processed/silver/JOB_END/');
 SELECT MIN(DATE) from INPA;
 SELECT MAX(DATE) from INPA;
 SELECT MIN(DATE) from JOB_START;

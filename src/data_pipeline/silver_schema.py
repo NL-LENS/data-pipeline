@@ -14,6 +14,8 @@ RELATION_COLUMN = "RELATIONS"
 ENTITY_COLUMNS: MappingProxyType[str, str] = MappingProxyType(
     {
         "person": "PERSON_ID",
+        "mother": "MOTHER_ID",
+        "father": "FATHER_ID",
         "company": "COMPANY_ID",
         "school": "SCHOOL_ID",
         "dwelling": "DWELLING_ID",

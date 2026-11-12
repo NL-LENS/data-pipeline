@@ -44,6 +44,15 @@ pytest
 
 To add tests, consider the existing structure of tests and the documentation.
 
+## Benchmarking
+
+To compare chunk sizes and numbers of processes for writing a `.sav` file to bronze, run
+```shell
+python scripts/benchmark_bronze.py /path/to/file.sav --chunk_sizes 100000 500000 --num_processes 1 4
+```
+By default, the script reads the first 10% of the rows (`--fraction`) and logs the time and throughput
+for each combination. The output is written to a temporary directory and removed afterwards.
+
 ## Code quality
 
 For consistent formatting and code quality, we use [`ruff`] and [`mypy`].

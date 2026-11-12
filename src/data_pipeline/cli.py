@@ -38,6 +38,9 @@ def cli_main() -> None:
     )
     build_parser.add_argument("--dest_dir", type=Path, help="Path to the processed bronze data.")
     build_parser.add_argument("--chunk_size", type=int, help="Number of rows to process per chunk.", default=None)
+    build_parser.add_argument(
+        "--num_processes", type=int, help="Number of processes for reading each chunk.", default=1
+    )
 
     all_subparsers = [init_parser, build_parser]
     for p in all_subparsers:
@@ -63,6 +66,7 @@ def cli_main() -> None:
                     start_year=start_year,
                     end_year=end_year,
                     chunk_size=args.chunk_size,
+                    num_processes=args.num_processes,
                 )
                 build_bronze(args.db_file, config, args.dest_dir)
             else:

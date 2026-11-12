@@ -30,6 +30,11 @@ lens build bronze \
 
 ```
 
+The `.sav` files are read in chunks of 500,000 rows; use `--chunk_size` to change this.
+Each chunk is read in a single process by default; use `--num_processes` to read
+each chunk with several processes. On the RA, multiprocessing has given only small
+speed-ups so far.
+
 ### 2. Create silver data
 
 Using a Python script as follows (note that metadata for silver are *not*

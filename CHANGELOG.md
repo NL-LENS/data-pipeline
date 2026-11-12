@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Changed
+- The default chunk size for reading `.sav` files is now 500,000 rows (was 100,000).
 
 
 ## [0.0.1] - 2026-11-11

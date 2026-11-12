@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the CLI (`--num_processes`), via [PR #40](https://github.com/NL-LENS/data-pipeline/pull/40).
   The default is no multiprocessing.
 - Option `n_rows` in `stream_to_bronze` to read only the first rows of a file.
+- Script `scripts/benchmark_bronze.py` to benchmark chunk sizes and numbers of processes.
 
 ### Removed
 

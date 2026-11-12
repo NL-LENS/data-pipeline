@@ -16,7 +16,7 @@ from data_pipeline.schemas import SavMetaTable
 from data_pipeline.schemas import SourceManifest
 from data_pipeline.utils import quote_identifier
 
-DEFAULT_CHUNKSIZE = 100_000
+DEFAULT_CHUNKSIZE = 500_000
 
 logger = logging.getLogger(__name__)
 

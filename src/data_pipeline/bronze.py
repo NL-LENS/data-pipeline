@@ -109,6 +109,7 @@ def stream_to_bronze(
     chunk_size: int,
     *,
     num_processes: int = 1,
+    n_rows: int | None = None,
 ) -> None:
     """Stream a source .sav file to bronze Parquet.
 
@@ -123,6 +124,9 @@ def stream_to_bronze(
     num_processes : int
         Number of processes to read each chunk with. With 1 (the default),
         chunks are read without multiprocessing.
+    n_rows : int or None
+        Number of rows to read from the start of the file. With None (the
+        default), all rows are read.
     """
     # NOTE: uses a work-around with a while loop + offsets + row_limit
     # instead of pyreadstat.read_file_in_chunks.
@@ -131,6 +135,8 @@ def stream_to_bronze(
     # dependency.
     meta = read_sav_meta(source_file)
     total_rows = meta.number_rows or 0
+    if n_rows is not None:
+        total_rows = min(total_rows, n_rows)
 
     # Read sample table for the schema; convert to upper
     sample_table, _ = pyreadstat.read_sav(source_file, output_format="polars", row_limit=1000)

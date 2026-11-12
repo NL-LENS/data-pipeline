@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Option to read `.sav` files with multiprocessing in `stream_to_bronze`, `BronzeConfig`
   and the CLI (`--num_processes`), via [PR #40](https://github.com/NL-LENS/data-pipeline/pull/40).
   The default is no multiprocessing.
+- Option `n_rows` in `stream_to_bronze` to read only the first rows of a file.
 
 ### Removed
 

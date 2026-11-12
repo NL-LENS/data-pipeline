@@ -141,8 +141,10 @@ class TestBronze(TestData):
         [
             {"chunk_size": 9_999},
             {"chunk_size": 9_999, "num_processes": 2},
+            # The last chunk has 1 row, fewer than the number of processes
+            {"chunk_size": 1_000, "num_processes": 3, "n_rows": 2_001},
         ],
-        ids=["single_process", "multiprocessing"],
+        ids=["single_process", "multiprocessing", "multiprocessing_n_rows"],
     )
     def test_stream_to_bronze(
         self,
@@ -160,6 +162,8 @@ class TestBronze(TestData):
         expected_data.columns = [col.upper() for col in expected_data.columns]
         file_path_out = tmp_path / self.file_out
         stream_to_bronze(sav_file, file_path_out, **read_options)
+        if "n_rows" in read_options:
+            expected_data = expected_data.head(read_options["n_rows"])
 
         result = pl.read_parquet(file_path_out)
         (

@@ -26,6 +26,10 @@ authors:
     given-names: Qixiang
     family-names: Fang
     affiliation: Utrecht University
+    - orcid: 'https://orcid.org/0009-0006-3343-654X'
+    given-names: Luca
+    family-names: Dughera
+    affiliation: Utrecht University
 keywords:
   - "registry-data"
   - "etl"

@@ -530,7 +530,7 @@ class DuckDBTable:
             data = con.execute(f"SELECT * FROM '{self.table_name}' WHERE {where_params}", lookup.values()).fetchone()  # noqa: S608
 
         if data is None:
-            msg = "No records in database for this primary key."
+            msg = f"No records in database for this primary key: {lookup}"
             raise RuntimeError(msg)
 
         result: dict[str, Any] = {}

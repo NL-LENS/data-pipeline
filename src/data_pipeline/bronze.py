@@ -7,6 +7,7 @@ from datetime import UTC
 from datetime import datetime
 from pathlib import Path
 import duckdb
+import polars as pl
 import pyarrow.parquet as pq
 import pyreadstat
 from data_pipeline.metadata import get_file_stats
@@ -16,7 +17,7 @@ from data_pipeline.schemas import SavMetaTable
 from data_pipeline.schemas import SourceManifest
 from data_pipeline.utils import quote_identifier
 
-DEFAULT_CHUNKSIZE = 100_000
+DEFAULT_CHUNKSIZE = 500_000
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,9 @@ class BronzeConfig:
         Last year of the reference period.
     chunk_size:
         Chunk size for processing the .sav files.
+    num_processes:
+        Number of processes for reading each chunk of the .sav files.
+        Defaults to 1, i.e. no multiprocessing.
 
     Notes
     -----
@@ -54,6 +58,7 @@ class BronzeConfig:
     start_year: int
     end_year: int
     chunk_size: int | None = None
+    num_processes: int = 1
 
 
 def read_sav_meta(file: Path | str) -> pyreadstat.metadata_container:
@@ -102,6 +107,9 @@ def stream_to_bronze(
     source_file: Path | str,
     dest_file: Path | str,
     chunk_size: int,
+    *,
+    num_processes: int = 1,
+    n_rows: int | None = None,
 ) -> None:
     """Stream a source .sav file to bronze Parquet.
 
@@ -113,6 +121,12 @@ def stream_to_bronze(
         Path to the output Parquet file.
     chunk_size : int
         Number of rows to read per chunk.
+    num_processes : int
+        Number of processes to read each chunk with. With 1 (the default),
+        chunks are read without multiprocessing.
+    n_rows : int or None
+        Number of rows to read from the start of the file. With None (the
+        default), all rows are read.
     """
     # NOTE: uses a work-around with a while loop + offsets + row_limit
     # instead of pyreadstat.read_file_in_chunks.
@@ -121,6 +135,8 @@ def stream_to_bronze(
     # dependency.
     meta = read_sav_meta(source_file)
     total_rows = meta.number_rows or 0
+    if n_rows is not None:
+        total_rows = min(total_rows, n_rows)
 
     # Read sample table for the schema; convert to upper
     sample_table, _ = pyreadstat.read_sav(source_file, output_format="polars", row_limit=1000)
@@ -131,16 +147,31 @@ def stream_to_bronze(
 
     with pq.ParquetWriter(dest_file, parquet_schema) as writer:
         while offset < total_rows:
-            chunk, _ = pyreadstat.read_sav(
-                source_file,
-                row_offset=offset,
-                row_limit=chunk_size,
-                output_format="polars",
-            )
+            row_limit = min(chunk_size, total_rows - offset)
+            chunk = _read_sav_chunk(source_file, offset, row_limit, num_processes)
             chunk.columns = [col.upper() for col in chunk.columns]
             table = chunk.to_arrow()
             writer.write_table(table)
             offset += chunk_size
+
+
+def _read_sav_chunk(source_file: Path | str, row_offset: int, row_limit: int, num_processes: int) -> pl.DataFrame:
+    """Read `row_limit` rows from `row_offset`, optionally with multiprocessing."""
+    if num_processes == 1:
+        chunk, _ = pyreadstat.read_sav(source_file, row_offset=row_offset, row_limit=row_limit, output_format="polars")
+        return chunk
+    # NOTE: pyreadstat splits the rows evenly across the processes. A process that
+    # gets 0 rows passes `row_limit=0` to `read_sav`, which reads until the end of
+    # the file. Never use more processes than rows to avoid duplicated rows.
+    chunk, _ = pyreadstat.read_file_multiprocessing(
+        pyreadstat.read_sav,
+        source_file,
+        num_processes=min(num_processes, row_limit),
+        row_offset=row_offset,
+        row_limit=row_limit,
+        output_format="polars",
+    )
+    return chunk
 
 
 def write_column_metadata_to_db(db_file: Path | str, source_path: Path, source_filename: Path | str) -> None:
@@ -157,7 +188,7 @@ def ingest_source(
     source_path: Path,
     source_filename: Path,
     dest_file: Path | str,
-    chunk_size: int | None = None,
+    config: BronzeConfig | None = None,
 ) -> None:
     """Ingest a source file from raw to bronze.
 
@@ -176,8 +207,9 @@ def ingest_source(
         Name of the .sav file to read.
     dest_file:
         The full path to the .parquet file to write.
-    chunk_size:
-        Number of rows to process in one chunk.
+    config:
+        BronzeConfig whose `chunk_size` and `num_processes` are used for
+        processing the .sav file. If None, the defaults are used.
 
     Raises
     ------
@@ -190,8 +222,12 @@ def ingest_source(
     file_metadata = FileMetaRecord.from_table(lookup=lookup, table=source_manifest)
 
     full_path_to_sav_file = source_path / source_filename
-    chunk_size = chunk_size or DEFAULT_CHUNKSIZE
-    stream_to_bronze(full_path_to_sav_file, dest_file, chunk_size)
+    chunk_size = DEFAULT_CHUNKSIZE
+    num_processes = 1
+    if config is not None:
+        chunk_size = config.chunk_size or DEFAULT_CHUNKSIZE
+        num_processes = config.num_processes
+    stream_to_bronze(full_path_to_sav_file, dest_file, chunk_size, num_processes=num_processes)
 
     # Update file metadata
     last_modified, file_size_mb = get_file_stats(full_path_to_sav_file)
@@ -272,4 +308,4 @@ def build(
     dest_dir.mkdir(exist_ok=True, parents=True)
     for source_path, source_filename in datasets_to_process:
         dest_filename = dest_dir / Path(source_filename).with_suffix(".parquet").name
-        ingest_source(source_manifest, Path(source_path), Path(source_filename), dest_filename, config.chunk_size)
+        ingest_source(source_manifest, Path(source_path), Path(source_filename), dest_filename, config)

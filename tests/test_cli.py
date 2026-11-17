@@ -36,8 +36,13 @@ def test_cli_init(exclude_dir: list, expected_arg: list | None, monkeypatch: pyt
         init_patch.assert_called_once_with(Path("/path/to/data/root"), Path("/path/to/db.db"), expected_arg)
 
 
-def test_cli_build(monkeypatch: pytest.MonkeyPatch):
-    """Test that init calls run_init."""
+@pytest.mark.parametrize(
+    ("num_processes", "expected_num_processes"),
+    [([], 1), (["--num_processes", "4"], 4)],
+    ids=["default_num_processes", "four_processes"],
+)
+def test_cli_build(num_processes: list[str], expected_num_processes: int, monkeypatch: pytest.MonkeyPatch):
+    """Test that build bronze calls build_bronze with the right config."""
     monkeypatch.setattr(
         sys,
         "argv",
@@ -56,12 +61,18 @@ def test_cli_build(monkeypatch: pytest.MonkeyPatch):
             "path/to/processed/data",
             "--chunk_size",
             "500_000",
+            *num_processes,
         ],
     )
     with patch("data_pipeline.cli.build_bronze") as build_bronze_patch:
         data_pipeline.cli.cli_main()
         config = BronzeConfig(
-            start_year=2020, end_year=2021, source_filename_regex="SPOLIS", source_path_regex="", chunk_size=500_000
+            start_year=2020,
+            end_year=2021,
+            source_filename_regex="SPOLIS",
+            source_path_regex="",
+            chunk_size=500_000,
+            num_processes=expected_num_processes,
         )
         build_bronze_patch.assert_called_once_with(
             Path("/path/to/db.db"),

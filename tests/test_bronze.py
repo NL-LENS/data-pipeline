@@ -136,11 +136,22 @@ class TestBronze(TestData):
             .alias("wage"),
         )
 
+    @pytest.mark.parametrize(
+        "read_options",
+        [
+            {"chunk_size": 9_999},
+            {"chunk_size": 9_999, "num_processes": 2},
+            # The last chunk has 1 row, fewer than the number of processes
+            {"chunk_size": 1_000, "num_processes": 3, "n_rows": 2_001},
+        ],
+        ids=["single_process", "multiprocessing", "multiprocessing_n_rows"],
+    )
     def test_stream_to_bronze(
         self,
         sav_test_data: tuple[pl.DataFrame, Path],
         sav_file: Path,
         tmp_path: Path,
+        read_options: dict,
     ) -> None:
         """Test stream_to_bronze function."""
         expected_data = sav_test_data
@@ -150,7 +161,9 @@ class TestBronze(TestData):
         expected_data = expected_data.with_columns(pl.lit(None).alias("null_col"))
         expected_data.columns = [col.upper() for col in expected_data.columns]
         file_path_out = tmp_path / self.file_out
-        stream_to_bronze(sav_file, file_path_out, chunk_size=9_999)
+        stream_to_bronze(sav_file, file_path_out, **read_options)
+        if "n_rows" in read_options:
+            expected_data = expected_data.head(read_options["n_rows"])
 
         result = pl.read_parquet(file_path_out)
         (
@@ -208,7 +221,10 @@ class TestBronze(TestData):
         dest_file = tmp_path / self.file_out
         source_manifest = SourceManifest(db_file=db_file)
         ingest_source(
-            source_manifest=source_manifest, source_path=tmp_path, source_filename=self.file_in, dest_file=dest_file
+            source_manifest=source_manifest,
+            source_path=tmp_path,
+            source_filename=self.file_in,
+            dest_file=dest_file,
         )
 
         source_manifest = SourceManifest(db_file=db_file)
@@ -220,8 +236,27 @@ class TestBronze(TestData):
         assert file_meta_record.version is None, "version modified when it should not."
         assert file_meta_record.ref_period is None, "ref period modified when it should not."
 
-        mock_stream_to_bronze.assert_called_once_with(tmp_path / self.file_in, dest_file, DEFAULT_CHUNKSIZE)
+        mock_stream_to_bronze.assert_called_once_with(
+            tmp_path / self.file_in, dest_file, DEFAULT_CHUNKSIZE, num_processes=1
+        )
         mock_write_column_metadata_to_db.assert_called_once_with(db_file, tmp_path, self.file_in)
+
+    @pytest.mark.usefixtures("metadata_db")
+    @pytest.mark.usefixtures("sav_test_data")
+    @mock.patch("data_pipeline.bronze.stream_to_bronze")
+    @mock.patch("data_pipeline.bronze.write_column_metadata_to_db", new=mock.Mock())
+    def test_ingest_source_with_config(
+        self,
+        mock_stream_to_bronze: mock.Mock,
+        db_file: Path,
+        tmp_path: Path,
+    ) -> None:
+        """Test that ingest_source reads with the chunk size and processes from the config."""
+        dest_file = tmp_path / self.file_out
+        config = BronzeConfig("", "", 2020, 2021, chunk_size=1_000, num_processes=4)
+        ingest_source(SourceManifest(db_file=db_file), tmp_path, Path(self.file_in), dest_file, config)
+
+        mock_stream_to_bronze.assert_called_once_with(tmp_path / self.file_in, dest_file, 1_000, num_processes=4)
 
 
 class TestBuild(TestData):

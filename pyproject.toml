@@ -116,6 +116,10 @@ pydocstyle.convention = "numpy"
     "PT011",  # Missing `match` parameter in `pytest.raises()`
     "S101",   # Use of assert is detected
 ]
+# Scripts are run directly and are not part of a package
+"scripts/**.py" = [
+    "INP001", # File is part of an implicit namespace package
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["data_pipeline"]

@@ -244,7 +244,6 @@ class TestBronze(TestData):
     @pytest.mark.usefixtures("metadata_db")
     @pytest.mark.usefixtures("sav_test_data")
     @mock.patch("data_pipeline.bronze.stream_to_bronze")
-    @mock.patch("data_pipeline.bronze.write_column_metadata_to_db", new=mock.Mock())
     def test_ingest_source_with_config(
         self,
         mock_stream_to_bronze: mock.Mock,
@@ -254,7 +253,8 @@ class TestBronze(TestData):
         """Test that ingest_source reads with the chunk size and processes from the config."""
         dest_file = tmp_path / self.file_out
         config = BronzeConfig("", "", 2020, 2021, chunk_size=1_000, num_processes=4)
-        ingest_source(SourceManifest(db_file=db_file), tmp_path, Path(self.file_in), dest_file, config)
+        with mock.patch("data_pipeline.bronze.write_column_metadata_to_db"):
+            ingest_source(SourceManifest(db_file=db_file), tmp_path, Path(self.file_in), dest_file, config)
 
         mock_stream_to_bronze.assert_called_once_with(tmp_path / self.file_in, dest_file, 1_000, num_processes=4)
 

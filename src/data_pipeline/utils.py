@@ -8,6 +8,8 @@ from typing import get_origin
 
 _VALID_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+WINDOWS_FILESYSTEM = True
+
 
 def make_insert_params(data: list | tuple) -> str:
     """Create SQL query parameters for inserting `data`."""
@@ -52,12 +54,24 @@ def filter_list(list_in: list, drop_patterns: list) -> list:
     list_in: The list to process.
     drop_patterns: A list of patterns to drop. Elements in `list_in` that
     contain a substring matching any of the `drop_patterns` are dropped.
+    If :py:const:`WINDOWS_FILESYSTEM` is True, matching ignores case.
 
     Returns
     -------
     The modified list.
+
+    Details
+    -------
+    Case-sensitivity depends on both whether the filesystem is Windows and whether
+    the OS is Windows. This can lead to difficult edge cases.
+    The current implementation effectively assumes a Windows filesystem and a
+    Windows OS.
     """
-    return list(filterfalse(lambda x: any(y in x for y in drop_patterns), list_in))
+    if WINDOWS_FILESYSTEM:
+        patterns = [y.lower() for y in drop_patterns]
+        return list(filterfalse(lambda x: any(y in x.lower() for y in patterns), list_in))
+
+    return list(filterfalse(lambda x: any(y in x.lower() for y in drop_patterns), list_in))
 
 
 def is_optional(field: type | str) -> bool:

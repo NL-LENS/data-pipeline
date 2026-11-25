@@ -10,6 +10,7 @@ import duckdb
 import polars as pl
 import pyarrow.parquet as pq
 import pyreadstat
+from tqdm import tqdm
 from data_pipeline.metadata import get_file_stats
 from data_pipeline.schemas import FileMetaRecord
 from data_pipeline.schemas import SavColumnMeta
@@ -17,7 +18,7 @@ from data_pipeline.schemas import SavMetaTable
 from data_pipeline.schemas import SourceManifest
 from data_pipeline.utils import quote_identifier
 
-DEFAULT_CHUNKSIZE = 500_000
+DEFAULT_CHUNKSIZE = 1_000_000
 
 logger = logging.getLogger(__name__)
 
@@ -143,16 +144,14 @@ def stream_to_bronze(
     sample_table.columns = [col.upper() for col in sample_table.columns]
     parquet_schema = sample_table.to_arrow().schema
 
-    offset = 0
-
     with pq.ParquetWriter(dest_file, parquet_schema) as writer:
-        while offset < total_rows:
+        for offset in tqdm(range(0, total_rows, chunk_size), unit="chunk", desc=Path(source_file).name):
             row_limit = min(chunk_size, total_rows - offset)
             chunk = _read_sav_chunk(source_file, offset, row_limit, num_processes)
+
             chunk.columns = [col.upper() for col in chunk.columns]
             table = chunk.to_arrow()
             writer.write_table(table)
-            offset += chunk_size
 
 
 def _read_sav_chunk(source_file: Path | str, row_offset: int, row_limit: int, num_processes: int) -> pl.DataFrame:

@@ -400,6 +400,7 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pyreadstat" },
     { name = "pytz" },
+    { name = "tqdm" },
 ]
 
 [package.optional-dependencies]
@@ -417,6 +418,7 @@ dev = [
     { name = "sphinx" },
     { name = "sphinx-autoapi" },
     { name = "sphinx-rtd-theme" },
+    { name = "types-tqdm" },
 ]
 docs = [
     { name = "myst-parser" },
@@ -456,7 +458,9 @@ requires-dist = [
     { name = "sphinx-autoapi", marker = "extra == 'docs'" },
     { name = "sphinx-rtd-theme", marker = "extra == 'dev'" },
     { name = "sphinx-rtd-theme", marker = "extra == 'docs'" },
+    { name = "tqdm" },
     { name = "twine", marker = "extra == 'publishing'" },
+    { name = "types-tqdm", marker = "extra == 'dev'" },
     { name = "wheel", marker = "extra == 'publishing'" },
 ]
 provides-extras = ["dev", "docs", "publishing"]
@@ -1802,6 +1806,18 @@ wheels = [
 ]
 
 [[package]]
+name = "tqdm"
+version = "4.70.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0d/ea/b2a5bd54b28a324dae8211928b2d730b6547500342c7e6c6dea08bd0a485/tqdm-4.70.1.tar.gz", hash = "sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4", size = 171846, upload-time = "2026-09-11T07:25:16.601Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a7/03/921a3d3c75785aca9ebfbfcabfbc3a1be12e2ab5265deb026d55a5a3f83e/tqdm-4.70.1-py3-none-any.whl", hash = "sha256:c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73", size = 80199, upload-time = "2026-09-11T07:25:14.599Z" },
+]
+
+[[package]]
 name = "traitlets"
 version = "5.15.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1837,6 +1853,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e0/a8/949edebe3a82774c1ec34f637f5dd82d1cf22c25e963b7d63771083bbee5/twine-6.2.0.tar.gz", hash = "sha256:e5ed0d2fd70c9959770dce51c8f39c8945c574e18173a7b81802dab51b4b75cf", size = 172262, upload-time = "2025-09-04T15:43:17.255Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3a/7a/882d99539b19b1490cac5d77c67338d126e4122c8276bf640e411650c830/twine-6.2.0-py3-none-any.whl", hash = "sha256:418ebf08ccda9a8caaebe414433b0ba5e25eb5e4a927667122fbe8f829f985d8", size = 42727, upload-time = "2025-09-04T15:43:15.994Z" },
+]
+
+[[package]]
+name = "types-tqdm"
+version = "4.70.0.20261122"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/be/d7d285ee602365302e83d16aa146496486873c61c95ff43ebacd70d58f35/types_tqdm-4.70.0.20261122.tar.gz", hash = "sha256:f2c4ac5e043ee54d73cd1abc3f111dc7a2ab9ee717eb593b8e7330c326c3e61a", size = 19659, upload-time = "2026-11-22T08:58:22.257Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3a/ef/00233066db8f645839c00ea2626d11850ea6f4a6e2b2207fec4d70b091fe/types_tqdm-4.70.0.20261122-py3-none-any.whl", hash = "sha256:a8e81a67368e5c03eb5e20dfbdd27162cfc0fcfbb0951a8a05357a895deeba74", size = 25406, upload-time = "2026-11-22T08:58:21.443Z" },
 ]
 
 [[package]]

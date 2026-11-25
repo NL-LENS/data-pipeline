@@ -27,6 +27,7 @@ dependencies = [
    "pyreadstat",
    "numpy",
    "pyarrow",
+   "tqdm",
    "pytz", # Undeclared runtime dependency of DuckDB: https://github.com/duckdb/duckdb-python/discussions/406
 ]
 description = "Medallion architecture for CBS life event data"
@@ -52,6 +53,7 @@ dev = [
     "mypy",
     "prek",
     "ipython",
+    "types-tqdm",
 ]
 docs = [
     "sphinx",
